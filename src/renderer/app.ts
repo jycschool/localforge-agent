@@ -5,6 +5,7 @@ import type {
   ProjectSnapshot,
   PublicSettings,
 } from "../desktop/contracts";
+import { fileVisualFor } from "./fileIcons";
 
 declare global {
   interface Window {
@@ -14,6 +15,7 @@ declare global {
 
 interface TreeNode {
   name: string;
+  relativePath: string;
   directories: Map<string, TreeNode>;
   files: string[];
 }
@@ -26,6 +28,8 @@ let currentSettings: PublicSettings | null = null;
 let activeApproval: CommandApprovalRequest | null = null;
 let approvalAnswered = false;
 let toastTimer: number | undefined;
+let treeInitialized = false;
+const expandedDirectories = new Set<string>();
 
 const openProjectButton = element<HTMLButtonElement>("open-project");
 const welcomeOpenProjectButton = element<HTMLButtonElement>("welcome-open-project");
@@ -66,6 +70,9 @@ const approvalCwd = element<HTMLElement>("approval-cwd");
 const approveCommandButton = element<HTMLButtonElement>("approve-command");
 const rejectCommandButton = element<HTMLButtonElement>("reject-command");
 const toast = element<HTMLElement>("toast");
+const workbench = element<HTMLElement>("workbench");
+const leftResizer = element<HTMLElement>("left-resizer");
+const rightResizer = element<HTMLElement>("right-resizer");
 
 openProjectButton.addEventListener("click", () => void selectProject());
 welcomeOpenProjectButton.addEventListener("click", () => void selectProject());
@@ -86,6 +93,8 @@ approvalDialog.addEventListener("close", () => {
   activeApproval = null;
   approvalAnswered = false;
 });
+
+setupColumnResizing();
 
 api.onAgentEvent(handleAgentEvent);
 api.onApprovalRequested(showApproval);
@@ -115,6 +124,8 @@ async function selectProject(): Promise<void> {
     project = selected;
     selectedFile = null;
     changes = [];
+    treeInitialized = false;
+    expandedDirectories.clear();
     renderProject();
     renderChanges();
     showProjectWelcome();
@@ -148,8 +159,14 @@ function renderProject(): void {
   }
   projectName.textContent = project.name;
   projectPath.textContent = project.rootPath;
+  const previousScrollTop = fileTree.scrollTop;
   fileTree.replaceChildren();
-  const root: TreeNode = { name: project.name, directories: new Map(), files: [] };
+  const root: TreeNode = {
+    name: project.name,
+    relativePath: "",
+    directories: new Map(),
+    files: [],
+  };
   for (const file of project.files) {
     insertFile(root, file.relativePath);
   }
@@ -160,6 +177,8 @@ function renderProject(): void {
     note.textContent = "文件较多，仅显示前 2,000 个。";
     fileTree.append(note);
   }
+  treeInitialized = true;
+  fileTree.scrollTop = previousScrollTop;
 }
 
 function insertFile(root: TreeNode, relativePath: string): void {
@@ -172,7 +191,12 @@ function insertFile(root: TreeNode, relativePath: string): void {
   for (const directory of parts) {
     let child = node.directories.get(directory);
     if (!child) {
-      child = { name: directory, directories: new Map(), files: [] };
+      child = {
+        name: directory,
+        relativePath: node.relativePath ? `${node.relativePath}/${directory}` : directory,
+        directories: new Map(),
+        files: [],
+      };
       node.directories.set(directory, child);
     }
     node = child;
@@ -189,9 +213,30 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     const item = document.createElement("li");
     const details = document.createElement("details");
     details.className = "tree-directory";
-    details.open = depth === 0;
+    details.dataset.path = directory.relativePath;
+    details.open = expandedDirectories.has(directory.relativePath) || (!treeInitialized && depth === 0);
+    if (details.open) {
+      expandedDirectories.add(directory.relativePath);
+    }
+    details.addEventListener("toggle", () => {
+      if (details.open) {
+        expandedDirectories.add(directory.relativePath);
+      } else {
+        expandedDirectories.delete(directory.relativePath);
+      }
+    });
     const summary = document.createElement("summary");
-    summary.textContent = directory.name;
+    summary.title = directory.relativePath;
+    const twistie = document.createElement("span");
+    twistie.className = "tree-twistie";
+    twistie.setAttribute("aria-hidden", "true");
+    const folderIcon = document.createElement("span");
+    folderIcon.className = "tree-folder-icon";
+    folderIcon.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "tree-label";
+    label.textContent = directory.name;
+    summary.append(twistie, folderIcon, label);
     details.append(summary, renderTree(directory, depth + 1));
     item.append(details);
     list.append(item);
@@ -201,13 +246,31 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `tree-file${selectedFile === relativePath ? " selected" : ""}`;
-    button.textContent = relativePath.split("/").pop() ?? relativePath;
+    button.title = relativePath;
     button.dataset.path = relativePath;
+    const indent = document.createElement("span");
+    indent.className = "tree-indent";
+    indent.setAttribute("aria-hidden", "true");
+    const visual = fileVisualFor(relativePath);
+    const icon = document.createElement("span");
+    icon.className = `file-icon ${visual.className}`;
+    icon.textContent = visual.label;
+    icon.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "file-label";
+    label.textContent = relativePath.split("/").pop() ?? relativePath;
+    button.append(indent, icon, label);
     button.addEventListener("click", () => void openFile(relativePath));
     item.append(button);
     list.append(item);
   }
   return list;
+}
+
+function updateFileSelection(): void {
+  fileTree.querySelectorAll<HTMLButtonElement>(".tree-file").forEach((button) => {
+    button.classList.toggle("selected", button.dataset.path === selectedFile);
+  });
 }
 
 async function openFile(relativePath: string): Promise<void> {
@@ -222,7 +285,7 @@ async function openFile(relativePath: string): Promise<void> {
     pre.textContent = file.content;
     previewContent.replaceChildren(pre);
     selectedContext.textContent = `上下文：${file.relativePath}`;
-    renderProject();
+    updateFileSelection();
     renderChanges();
   } catch (error) {
     notify(errorMessage(error));
@@ -262,6 +325,7 @@ function showDiff(change: ChangedFileSnapshot): void {
   );
   previewContent.replaceChildren(wrapper);
   selectedContext.textContent = `上下文：${change.relativePath}`;
+  updateFileSelection();
 }
 
 function diffColumn(label: string, content: string): HTMLElement {
@@ -581,4 +645,98 @@ function element<T extends HTMLElement>(id: string): T {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function setupColumnResizing(): void {
+  const leftDefault = 270;
+  const rightDefault = 390;
+  const leftStored = storedWidth("localforge.leftPanelWidth", leftDefault);
+  const rightStored = storedWidth("localforge.rightPanelWidth", rightDefault);
+
+  setPanelWidth("left", leftStored, false);
+  setPanelWidth("right", rightStored, false);
+  setPanelWidth("left", panelWidth("left"), false);
+
+  attachResizer(leftResizer, "left", leftDefault);
+  attachResizer(rightResizer, "right", rightDefault);
+  window.addEventListener("resize", () => {
+    setPanelWidth("right", panelWidth("right"), false);
+    setPanelWidth("left", panelWidth("left"), false);
+  });
+}
+
+function attachResizer(
+  resizer: HTMLElement,
+  side: "left" | "right",
+  defaultWidth: number,
+): void {
+  resizer.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panelWidth(side);
+    resizer.classList.add("active");
+    document.body.classList.add("resizing-columns");
+    resizer.setPointerCapture(event.pointerId);
+
+    const move = (moveEvent: PointerEvent): void => {
+      const delta = moveEvent.clientX - startX;
+      setPanelWidth(side, startWidth + (side === "left" ? delta : -delta));
+    };
+    const finish = (finishEvent: PointerEvent): void => {
+      resizer.removeEventListener("pointermove", move);
+      resizer.removeEventListener("pointerup", finish);
+      resizer.removeEventListener("pointercancel", finish);
+      if (resizer.hasPointerCapture(finishEvent.pointerId)) {
+        resizer.releasePointerCapture(finishEvent.pointerId);
+      }
+      resizer.classList.remove("active");
+      document.body.classList.remove("resizing-columns");
+    };
+    resizer.addEventListener("pointermove", move);
+    resizer.addEventListener("pointerup", finish);
+    resizer.addEventListener("pointercancel", finish);
+  });
+
+  resizer.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    setPanelWidth(side, panelWidth(side) + (side === "left" ? direction : -direction) * 12);
+  });
+
+  resizer.addEventListener("dblclick", () => setPanelWidth(side, defaultWidth));
+}
+
+function setPanelWidth(side: "left" | "right", requestedWidth: number, persist = true): void {
+  const minimum = side === "left" ? 210 : 300;
+  const configuredMaximum = side === "left" ? 480 : 560;
+  const otherWidth = panelWidth(side === "left" ? "right" : "left");
+  const availableMaximum = workbench.clientWidth - otherWidth - 360 - 10;
+  const maximum = Math.max(minimum, Math.min(configuredMaximum, availableMaximum));
+  const width = Math.round(Math.min(maximum, Math.max(minimum, requestedWidth)));
+  const property = side === "left" ? "--left-panel-width" : "--right-panel-width";
+  const resizer = side === "left" ? leftResizer : rightResizer;
+  workbench.style.setProperty(property, `${width}px`);
+  resizer.setAttribute("aria-valuenow", String(width));
+  resizer.setAttribute("aria-valuemax", String(Math.round(maximum)));
+  if (persist) {
+    localStorage.setItem(`localforge.${side}PanelWidth`, String(width));
+  }
+}
+
+function panelWidth(side: "left" | "right"): number {
+  const property = side === "left" ? "--left-panel-width" : "--right-panel-width";
+  const value = getComputedStyle(workbench).getPropertyValue(property);
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : side === "left" ? 270 : 390;
+}
+
+function storedWidth(key: string, fallback: number): number {
+  const parsed = Number.parseFloat(localStorage.getItem(key) ?? "");
+  return Number.isFinite(parsed) ? parsed : fallback;
 }

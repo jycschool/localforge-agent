@@ -31,7 +31,7 @@
         </div>
       </header>
 
-      <div class="workbench">
+      <div id="workbench" class="workbench">
         <aside class="project-panel" aria-label="项目结构">
           <section class="panel-section file-section">
             <div class="panel-heading">
@@ -52,6 +52,20 @@
             </div>
           </section>
         </aside>
+
+        <div
+          id="left-resizer"
+          class="column-resizer"
+          role="separator"
+          aria-label="调整项目面板宽度"
+          aria-orientation="vertical"
+          aria-controls="file-tree"
+          aria-valuemin="210"
+          aria-valuemax="480"
+          aria-valuenow="270"
+          tabindex="0"
+          title="拖动调整宽度，双击恢复"
+        ></div>
 
         <main class="preview-panel">
           <header class="preview-header">
@@ -77,6 +91,20 @@
             <pre id="output-log">等待 Agent 运行命令或工具…</pre>
           </section>
         </main>
+
+        <div
+          id="right-resizer"
+          class="column-resizer"
+          role="separator"
+          aria-label="调整 Agent 面板宽度"
+          aria-orientation="vertical"
+          aria-controls="timeline"
+          aria-valuemin="300"
+          aria-valuemax="560"
+          aria-valuenow="390"
+          tabindex="0"
+          title="拖动调整宽度，双击恢复"
+        ></div>
 
         <aside class="agent-panel" aria-label="Agent 任务">
           <header class="agent-header">

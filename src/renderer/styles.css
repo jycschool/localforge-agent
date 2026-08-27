@@ -20,6 +20,9 @@
   --danger-soft: #392022;
   --blue: #8ab4f8;
   --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  --explorer-font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --left-panel-width: 270px;
+  --right-panel-width: 390px;
 }
 
 * {
@@ -33,6 +36,11 @@ body {
   margin: 0;
   overflow: hidden;
   background: var(--app-bg);
+}
+
+body.resizing-columns {
+  cursor: col-resize;
+  user-select: none;
 }
 
 button,
@@ -238,7 +246,12 @@ textarea:focus-visible {
 
 .workbench {
   display: grid;
-  grid-template-columns: 270px minmax(430px, 1fr) 390px;
+  grid-template-columns:
+    var(--left-panel-width)
+    5px
+    minmax(360px, 1fr)
+    5px
+    var(--right-panel-width);
   min-height: 0;
 }
 
@@ -252,8 +265,33 @@ textarea:focus-visible {
 .project-panel {
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(150px, 32%);
-  border-right: 1px solid var(--border);
   background: var(--surface-1);
+}
+
+.column-resizer {
+  width: 5px;
+  min-height: 0;
+  position: relative;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resizer::before {
+  width: 1px;
+  position: absolute;
+  inset: 0 auto 0 2px;
+  background: var(--border);
+  content: "";
+  transition: width 100ms ease, background-color 100ms ease, left 100ms ease;
+}
+
+.column-resizer:hover::before,
+.column-resizer:focus-visible::before,
+.column-resizer.active::before {
+  width: 3px;
+  left: 1px;
+  background: #6c8fb8;
 }
 
 .panel-section {
@@ -292,8 +330,9 @@ textarea:focus-visible {
 .file-tree,
 .change-list {
   height: calc(100% - 42px);
-  overflow: auto;
-  padding: 0 7px 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1px 5px 10px;
 }
 
 .empty-copy {
@@ -304,54 +343,124 @@ textarea:focus-visible {
 }
 
 .tree-list {
+  width: 100%;
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .tree-list .tree-list {
-  padding-left: 14px;
+  width: calc(100% - 12px);
+  margin-left: 12px;
+}
+
+.tree-list > li,
+.tree-directory {
+  width: 100%;
+  min-width: 0;
 }
 
 .tree-directory > summary {
   display: flex;
   align-items: center;
-  min-height: 28px;
-  padding: 3px 7px;
-  border-radius: 4px;
-  color: #b9c0c9;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px 0 1px;
+  border-radius: 3px;
+  color: #cccccc;
   cursor: pointer;
+  font-family: var(--explorer-font);
+  font-size: 13px;
+  font-weight: 400;
   list-style: none;
-  font-size: 12px;
+  white-space: nowrap;
 }
 
-.tree-directory > summary::before {
+.tree-directory > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree-twistie,
+.tree-indent {
+  display: inline-grid;
+  flex: 0 0 16px;
+  place-items: center;
+  width: 16px;
+  height: 22px;
+}
+
+.tree-twistie::before {
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  color: #8b8b8b;
+  content: "";
+  transform: translateX(-1px) rotate(-45deg);
+  transform-origin: center;
+  transition: transform 80ms ease;
+}
+
+.tree-directory[open] > summary .tree-twistie::before {
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.tree-folder-icon {
   width: 14px;
-  content: "›";
-  color: var(--faint);
-  transform: rotate(0deg);
+  height: 10px;
+  flex: 0 0 14px;
+  margin: 1px 6px 0 0;
+  position: relative;
+  border-radius: 1px;
+  background: #c4a35a;
+  opacity: 0.9;
 }
 
-.tree-directory[open] > summary::before {
-  transform: rotate(90deg);
+.tree-folder-icon::before {
+  width: 6px;
+  height: 3px;
+  position: absolute;
+  top: -2px;
+  left: 1px;
+  border-radius: 1px 1px 0 0;
+  background: inherit;
+  content: "";
+}
+
+.tree-directory[open] > summary .tree-folder-icon {
+  background: #d2b76f;
+}
+
+.tree-label,
+.file-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-file,
 .change-file {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  min-height: 28px;
-  padding: 4px 7px 4px 21px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px 0 1px;
   overflow: hidden;
   border: 0;
-  border-radius: 4px;
-  color: #b9c0c9;
+  border-radius: 3px;
+  color: #cccccc;
   background: transparent;
   cursor: pointer;
+  font-family: var(--explorer-font);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 24px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
 }
 
 .tree-file:hover,
@@ -360,20 +469,66 @@ textarea:focus-visible {
 .tree-file.selected,
 .change-file.selected {
   color: var(--text);
-  background: var(--surface-3);
+  background: #252526;
 }
 
-.tree-file::before {
-  margin-right: 7px;
-  content: "·";
-  color: var(--faint);
+.tree-file.selected {
+  background: #37373d;
+}
+
+.file-icon {
+  display: inline-grid;
+  flex: 0 0 17px;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  margin-right: 4px;
+  color: #9aa0a6;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.icon-ts { color: #519aba; }
+.icon-js { color: #dcdcaa; }
+.icon-json { color: #d7ba7d; }
+.icon-markdown { color: #75beff; }
+.icon-css { color: #519aba; }
+.icon-html,
+.icon-markup { color: #e37933; }
+.icon-python { color: #6dadd6; }
+.icon-react { color: #4ec9b0; }
+.icon-test { color: #c586c0; }
+.icon-yaml { color: #e06c75; }
+.icon-image { color: #c586c0; }
+.icon-pdf { color: #e25555; }
+.icon-shell { color: #89d185; }
+.icon-rust { color: #ce9178; }
+.icon-go { color: #4ec9b0; }
+.icon-java { color: #d19a66; }
+.icon-config { color: #9da5b4; }
+.icon-lock { color: #d7ba7d; }
+.icon-data { color: #b5cea8; }
+.icon-text { color: #aab2bd; }
+
+.file-icon.icon-default {
+  position: relative;
+  color: transparent;
+}
+
+.file-icon.icon-default::before {
+  width: 10px;
+  height: 12px;
+  border: 1px solid #858585;
+  border-radius: 1px;
+  content: "";
 }
 
 .change-file {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  padding-left: 9px;
+  min-width: 0;
+  padding-left: 7px;
 }
 
 .change-file::before {
@@ -546,7 +701,6 @@ textarea:focus-visible {
 .agent-panel {
   display: grid;
   grid-template-rows: 60px minmax(0, 1fr) auto;
-  border-left: 1px solid var(--border);
   background: var(--surface-1);
 }
 
@@ -841,10 +995,6 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1220px) {
-  .workbench {
-    grid-template-columns: 235px minmax(400px, 1fr) 350px;
-  }
-
   .topbar {
     grid-template-columns: 235px minmax(280px, 1fr) auto;
   }
