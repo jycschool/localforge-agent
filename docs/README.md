@@ -13,6 +13,7 @@
 | [07-risk-and-quality.md](07-risk-and-quality.md) | 风险、安全、质量门禁和交付合规 | 已更新 |
 | [08-traceability.md](08-traceability.md) | 需求、源码、测试和演示证据追踪 | 已更新 |
 | [09-development-log.md](09-development-log.md) | 实际进展、验证证据、偏差与待办 | 持续更新 |
+| [10-optimization-roadmap.md](10-optimization-roadmap.md) | 截止前的优化优先级、实施阶段和验收标准 | 执行中 |
 | [decisions/0001-vscode-extension.md](decisions/0001-vscode-extension.md) | 初始 VS Code 形态决策 | 已被取代 |
 | [decisions/0002-standalone-desktop.md](decisions/0002-standalone-desktop.md) | 改为独立桌面 Agent 的决策 | 已接受 |
 
@@ -22,3 +23,4 @@
 - 架构级调整新增 ADR，不覆盖先前真实决策。
 - 每日收尾更新计划状态、日志、验证证据与剩余风险。
 - 发布前清理占位符，并确保文档、源码、视频和答辩表述一致。
+- 提交和推送按真实里程碑进行，不伪造日期或用空提交制造开发周期。

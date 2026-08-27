@@ -29,12 +29,7 @@
 
 ## 5. 提交策略
 
-使用小而真实的提交记录，不压缩或改写已推送历史。当前阶段建议提交：
-
-1. `docs: record standalone desktop pivot`
-2. `refactor: replace VS Code host with desktop app`
-3. `test: cover desktop project services`
-4. 后续按模型验证、命令稳定、演示交付继续拆分提交
+使用小而真实的提交记录，不压缩或改写已推送历史。后续按“路线图—任务历史—协议解析—真实模型验证—命令稳定—演示交付”形成里程碑提交。提交必须对应已经完成且可验证的工作；不通过空提交、伪造日期或无意义拆分制造开发周期。详细优化顺序见 `10-optimization-roadmap.md`。
 
 ## 6. 每日检查点
 
