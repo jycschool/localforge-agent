@@ -30,6 +30,8 @@ flowchart LR
 
 ## 3. 一次任务的完整时序
 
+任务文本先在 Renderer 受 20,000 字符限制，进入主进程后再次验证类型和长度；当前文件与 Skill id 同样不能只依赖页面状态。只有 IPC 请求通过后才读取 API Key、Memory 与 Skill，避免异常输入提前占用模型和历史资源。
+
 ```mermaid
 sequenceDiagram
     actor User as 用户

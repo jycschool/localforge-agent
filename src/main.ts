@@ -9,6 +9,7 @@ import type { AgentEvent, CommandApprovalRequest } from "./core/protocol";
 import { ConfigStore } from "./desktop/configStore";
 import {
   IPC_CHANNELS,
+  MAX_TASK_CHARS,
   type ChangedFileSnapshot,
   type RunRequest,
   type SettingsInput,
@@ -260,6 +261,9 @@ function parseRunRequest(input: unknown): RunRequest {
   const value = input as Record<string, unknown>;
   if (typeof value.task !== "string") {
     throw new Error("任务说明必须是文本。");
+  }
+  if (value.task.length > MAX_TASK_CHARS) {
+    throw new Error(`任务说明不能超过 ${MAX_TASK_CHARS.toLocaleString()} 个字符。`);
   }
   if (value.selectedFile !== undefined && typeof value.selectedFile !== "string") {
     throw new Error("当前文件路径无效。");

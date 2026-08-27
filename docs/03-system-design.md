@@ -48,6 +48,8 @@ flowchart LR
 | `tools/workspaceTools.ts` | 列表、搜索、读取、修改、命令和边界保护 | Git 提交与推送 |
 | `agent/changeTracker.ts` | 首次写入前快照和变更集合 | 撤销与版本控制 |
 
+Renderer 对任务输入设置 20,000 字符上限用于即时反馈；主进程仍把 IPC 参数视为不可信输入，独立校验任务类型/长度、当前文件类型和 Skill id 数组后才读取配置或创建 AgentLoop。
+
 ## 4. Agent 循环
 
 ```text

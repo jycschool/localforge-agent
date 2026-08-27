@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { IPC_CHANNELS } from "../src/desktop/contracts";
+import { IPC_CHANNELS, MAX_TASK_CHARS } from "../src/desktop/contracts";
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
 
@@ -128,6 +128,9 @@ describe("main-process IPC boundary", () => {
     await expect(invoke(IPC_CHANNELS.startRun, { task: 7 })).rejects.toThrow(
       "任务说明必须是文本",
     );
+    await expect(
+      invoke(IPC_CHANNELS.startRun, { task: "x".repeat(MAX_TASK_CHARS + 1) }),
+    ).rejects.toThrow("任务说明不能超过 20,000 个字符");
     await expect(
       invoke(IPC_CHANNELS.startRun, { task: "Inspect", selectedFile: 7 }),
     ).rejects.toThrow("当前文件路径无效");

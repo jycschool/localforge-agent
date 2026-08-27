@@ -1,13 +1,14 @@
 import type { AgentEvent, CommandApprovalRequest } from "../core/protocol";
-import type {
-  ChangedFileSnapshot,
-  DesktopApi,
-  ProjectContextSnapshot,
-  ProjectSnapshot,
-  PublicSettings,
-  RunHistoryDetail,
-  RunHistoryStatus,
-  RunHistorySummary,
+import {
+  MAX_TASK_CHARS,
+  type ChangedFileSnapshot,
+  type DesktopApi,
+  type ProjectContextSnapshot,
+  type ProjectSnapshot,
+  type PublicSettings,
+  type RunHistoryDetail,
+  type RunHistoryStatus,
+  type RunHistorySummary,
 } from "../desktop/contracts";
 import { fileVisualFor } from "./fileIcons";
 import { displayLocalPath } from "./pathDisplay";
@@ -67,6 +68,7 @@ const historyCount = element<HTMLElement>("history-count");
 const stopRunButton = element<HTMLButtonElement>("stop-run");
 const taskForm = element<HTMLFormElement>("task-form");
 const taskInput = element<HTMLTextAreaElement>("task-input");
+taskInput.maxLength = MAX_TASK_CHARS;
 const startRunButton = element<HTMLButtonElement>("start-run");
 const selectedContext = element<HTMLElement>("selected-context");
 const skillsButton = element<HTMLButtonElement>("skills-button");

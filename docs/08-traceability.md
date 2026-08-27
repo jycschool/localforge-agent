@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | FR-01 打开项目 | `main.ts`、`desktop/projectService.ts` | 项目扫描、目录选择人工测试 | 打开演示目录并显示项目名 |
 | FR-02 查看代码 | `renderer/app.ts`、`readProjectFile` | UTF-8、大小和越界测试 | 从目录树打开源文件 |
-| FR-03 提交任务 | `renderer/app.ts`、`main.ts` | 空任务、并发任务和无项目测试 | 在独立窗口提交真实任务 |
+| FR-03 提交任务 | `renderer/app.ts`、`main.ts` | 空任务、20,000 字符上限、并发任务和无项目测试 | 在独立窗口提交真实任务 |
 | FR-04 检索读取 | `tools/workspaceTools.ts` | `workspaceTools.test.ts`、路径测试 | 时间线展示搜索和读取 |
 | FR-05 修改文件 | WorkspaceTools、ChangeTracker | 精确替换、新建、含糊匹配 | 源文件和测试文件产生变更 |
 | FR-06 执行命令 | `run_command`、主进程审批、审批/执行分段计时 | 批准、拒绝、超时、取消 | 展示审批框、真实退出码与独立执行耗时 |

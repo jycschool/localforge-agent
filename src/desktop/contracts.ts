@@ -1,5 +1,7 @@
 import type { AgentEvent, ChatMessage, CommandApprovalRequest } from "../core/protocol";
 
+export const MAX_TASK_CHARS = 20_000;
+
 export const IPC_CHANNELS = {
   selectProject: "project:select",
   refreshProject: "project:refresh",
