@@ -55,7 +55,7 @@ function createWindow(): void {
   });
 }
 
-function registerIpc(
+export function registerIpc(
   configStore: ConfigStore,
   contextStore: ProjectContextStore,
   historyStore: RunHistoryStore,
@@ -120,8 +120,9 @@ function registerIpc(
     return historyStore.getRun(requireProject(), id, activeRunId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.startRun, async (_event, request: RunRequest) => {
+  ipcMain.handle(IPC_CHANNELS.startRun, async (_event, input: unknown) => {
     const rootPath = requireProject();
+    const request = parseRunRequest(input);
     if (activeController) {
       return { started: false, message: "已有任务正在运行。" };
     }
@@ -250,6 +251,30 @@ function registerIpc(
       return true;
     },
   );
+}
+
+function parseRunRequest(input: unknown): RunRequest {
+  if (!input || typeof input !== "object") {
+    throw new Error("任务请求无效。");
+  }
+  const value = input as Record<string, unknown>;
+  if (typeof value.task !== "string") {
+    throw new Error("任务说明必须是文本。");
+  }
+  if (value.selectedFile !== undefined && typeof value.selectedFile !== "string") {
+    throw new Error("当前文件路径无效。");
+  }
+  if (
+    value.skillIds !== undefined &&
+    (!Array.isArray(value.skillIds) || value.skillIds.some((id) => typeof id !== "string"))
+  ) {
+    throw new Error("Skill 选择无效。");
+  }
+  return {
+    task: value.task,
+    selectedFile: value.selectedFile as string | undefined,
+    skillIds: value.skillIds as string[] | undefined,
+  };
 }
 
 function requireProject(): string {

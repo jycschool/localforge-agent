@@ -34,7 +34,7 @@ pnpm test
 pnpm start
 ```
 
-开发冻结前可运行 `pnpm run verify` 完成类型检查、58 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+开发冻结前可运行 `pnpm run verify` 完成类型检查、64 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
 启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址、模型名称和 API Key。右侧的 `Skill` 用于选择项目工作方式，`Memory` 用于保存不进入仓库的长期上下文，然后即可输入任务。也可以先执行 `pnpm build`，只生成桌面程序的开发构建。
 
