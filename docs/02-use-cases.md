@@ -68,7 +68,7 @@
 1. Agent 调用 `run_command` 并提供用途说明。
 2. 模态框显示原因、完整命令和固定 cwd。
 3. 开发者选择“允许执行”或“拒绝”。
-4. LocalForge 只执行已批准的调用，并把真实结果返回 Agent。
+4. LocalForge 只执行已批准的调用；子进程继承普通运行环境，但剥离 Key、Token、Secret、Password、Credential、Auth 等敏感变量，再把真实结果返回 Agent。
 
 ## UC-07 配置模型
 

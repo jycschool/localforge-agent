@@ -26,13 +26,13 @@
 | 非功能需求 | 实现证据 | 验证 |
 | --- | --- | --- |
 | NFR-01 路径安全 | lexical + realpath 检查、跳过符号链接 | `pathSafety.test.ts`、`projectService.test.ts` |
-| NFR-02 最小权限 | sandbox、contextIsolation、Preload 白名单 | `preload.test.ts`、桌面启动检查、源码评审 |
+| NFR-02 最小权限 | sandbox、contextIsolation、Preload 白名单、命令敏感环境隔离 | `preload.test.ts`、`workspaceTools.test.ts`、桌面启动检查 |
 | NFR-03 可控 | 最大步骤、AbortSignal、可取消文件遍历、逐次审批、进程树终止 | Agent 取消/步数、遍历取消、命令超时/取消/子进程清理测试 |
 | NFR-04 可观察 | AgentEvent、timeline、output panel、任务历史 | 窗口检查、真实模型 38 条事件和端到端视频 |
 | NFR-05 可靠 | 严格响应解析、结构化工具错误和持久化 run 状态 | ModelClient、AgentLoop、RunHistoryStore 测试 |
 | NFR-06 性能 | 目录过滤、结果上限提前终止、2,000 文件/Agent 单文件 1 MB 上限、目录懒渲染、UI 输出上限 | 工作区/项目服务单测、大项目人工检查 |
 | NFR-07 可维护 | contracts、ModelClient、ToolRegistry 接口 | 模块依赖评审、类型检查 |
-| NFR-08 可测试 | 核心模块与 Preload/主进程 IPC/配置/富文本/路径脱敏边界可隔离验证 | 当前 69 项自动化测试 |
+| NFR-08 可测试 | 核心模块与 Preload/主进程 IPC/配置/富文本/路径脱敏边界可隔离验证 | 当前 70 项自动化测试 |
 
 ## 交付追踪
 

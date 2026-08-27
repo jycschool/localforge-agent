@@ -20,7 +20,7 @@ LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用
 - 严格校验模型响应与 tool call 协议；损坏调用会明确失败，429/常见 5xx 进行有限且可取消的重试。
 - 大目录按展开状态延迟渲染，并限制界面中的历史输出，避免长任务拖慢前端。
 - Agent 总结和历史结果以安全的轻量 Markdown 排版；只创建文本节点，不执行模型返回的 HTML。
-- API Key 使用操作系统安全存储加密，也可通过 `LOCALFORGE_API_KEY` 提供。
+- API Key 使用操作系统安全存储加密，也可通过 `LOCALFORGE_API_KEY` 提供；本地命令子进程会剥离常见 Key、Token、Secret 等敏感环境变量。
 - 内置 ModelScope 的 Qwen3 Coder 30B 免费推理预设；模型针对代码 Agent 和工具调用，免费额度适合课程演示。
 
 ## 本地运行
@@ -34,7 +34,7 @@ pnpm test
 pnpm start
 ```
 
-开发冻结前可运行 `pnpm run verify` 完成类型检查、69 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+开发冻结前可运行 `pnpm run verify` 完成类型检查、70 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
 录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
 

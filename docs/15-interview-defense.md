@@ -89,7 +89,7 @@ AbortSignal 同时连接模型请求、AgentLoop 和本地命令。Windows 使�
 
 ### Q20：API Key 如何保存？
 
-环境变量 `LOCALFORGE_API_KEY` 优先且不落盘；界面保存时使用 Electron `safeStorage` 加密。公开设置只返回是否存在和来源，不含明文。Key 与 API Base URL 绑定，切换服务后不会把旧服务 Key 发送到新地址。
+环境变量 `LOCALFORGE_API_KEY` 优先且不落盘；界面保存时使用 Electron `safeStorage` 加密。公开设置只返回是否存在和来源，不含明文。Key 与 API Base URL 绑定，切换服务后不会把旧服务 Key 发送到新地址。本地命令不会继承 Key、Token、Secret 等敏感环境变量，防止批准命令把凭据打印回 tool result；普通环境变量仍保留。
 
 ### Q21：为什么不自动提交 Git 或自动撤销？
 

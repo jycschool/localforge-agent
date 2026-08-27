@@ -43,6 +43,8 @@ const IGNORED_DIRECTORIES = new Set([
   "venv",
 ]);
 const MAX_TOOL_FILE_BYTES = 1_000_000;
+const SENSITIVE_ENVIRONMENT_NAME =
+  /(?:^|_)(?:API_?KEY|ACCESS_?KEY(?:_ID)?|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH)(?:_|$)/i;
 
 export async function createWorkspaceTools(options: WorkspaceToolOptions): Promise<AgentTool[]> {
   const rootRealPath = await realpath(options.rootPath);
@@ -394,7 +396,7 @@ async function runCommand(
       cwd,
       shell: true,
       windowsHide: true,
-      env: process.env,
+      env: commandEnvironment(),
       detached: process.platform !== "win32",
     });
     let stdout = "";
@@ -480,6 +482,12 @@ async function runCommand(
       context.signal.removeEventListener("abort", onAbort);
     }
   });
+}
+
+function commandEnvironment(): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !SENSITIVE_ENVIRONMENT_NAME.test(name)),
+  );
 }
 
 async function terminateProcessTree(child: ReturnType<typeof spawn>): Promise<void> {

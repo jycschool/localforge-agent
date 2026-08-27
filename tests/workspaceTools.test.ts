@@ -155,6 +155,31 @@ describe("workspace tools", () => {
     expect(payload.executionDurationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("does not expose sensitive parent environment variables to commands", async () => {
+    const previousKey = process.env.LOCALFORGE_API_KEY;
+    const previousFlag = process.env.LOCALFORGE_TEST_FLAG;
+    process.env.LOCALFORGE_API_KEY = "hidden-value";
+    process.env.LOCALFORGE_TEST_FLAG = "visible-test-value";
+    try {
+      const { tools } = await createFixture();
+      const result = await tool(tools, "run_command").execute(
+        {
+          command:
+            'node -e "process.stdout.write(String(process.env.LOCALFORGE_API_KEY || \'\') + \'|\' + String(process.env.LOCALFORGE_TEST_FLAG || \'\'))"',
+          reason: "验证子进程环境隔离",
+        },
+        executionContext(),
+      );
+      const payload = JSON.parse(result.content) as { stdout: string };
+
+      expect(payload.stdout).toBe("|visible-test-value");
+      expect(payload.stdout).not.toContain("hidden-value");
+    } finally {
+      restoreEnvironment("LOCALFORGE_API_KEY", previousKey);
+      restoreEnvironment("LOCALFORGE_TEST_FLAG", previousFlag);
+    }
+  });
+
   it("preserves a non-zero exit code and marks the result as an error", async () => {
     const { tools } = await createFixture();
     const result = await tool(tools, "run_command").execute(
@@ -299,4 +324,12 @@ async function stopRecordedChild(pidFile: string): Promise<void> {
 
 async function delay(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function restoreEnvironment(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
 }
