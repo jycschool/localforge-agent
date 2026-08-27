@@ -9,12 +9,12 @@
 | FR-03 提交任务 | `renderer/app.ts`、`main.ts` | 空任务、并发任务和无项目测试 | 在独立窗口提交真实任务 |
 | FR-04 检索读取 | `tools/workspaceTools.ts` | `workspaceTools.test.ts`、路径测试 | 时间线展示搜索和读取 |
 | FR-05 修改文件 | WorkspaceTools、ChangeTracker | 精确替换、新建、含糊匹配 | 源文件和测试文件产生变更 |
-| FR-06 执行命令 | `run_command`、主进程审批 | 批准、拒绝、超时、取消 | 展示审批框并运行测试 |
+| FR-06 执行命令 | `run_command`、主进程审批、审批/执行分段计时 | 批准、拒绝、超时、取消 | 展示审批框、真实退出码与独立执行耗时 |
 | FR-07 工具循环 | `agent/agentLoop.ts` | `agentLoop.test.ts` | 失败输出进入下一轮 |
 | FR-08 停止条件 | AgentLoop、AbortController | 取消和最大步骤测试 | 展示停止按钮和步骤设置 |
 | FR-09 过程观察 | AgentEvent、Renderer timeline | 事件映射和桌面人工测试 | 时间线展示读、改、测 |
 | FR-10 变更审查 | ChangeTracker、Renderer Diff | 首次快照和双栏渲染 | 从变更列表打开 Diff |
-| FR-11 验证证据 | `run_command`、output panel | exit code、stdout/stderr | 首测失败、二测通过 |
+| FR-11 验证证据 | `run_command`、output panel、`14-real-model-validation.md` | exit code、stdout/stderr | 真实模型首测 2/6、二测 6/6、外部复核 6/6 |
 | FR-12 模型配置 | ConfigStore、ModelClient | URL/数值验证、Key 隔离 | 展示模型名，不展示 Key |
 | FR-13 项目 Skill | ProjectContextStore、systemPrompt、上下文弹窗 | `projectContextStore.test.ts`、`systemPrompt.test.ts` | 勾选 Skill 后执行任务 |
 | FR-14 项目 Memory | ProjectContextStore、Memory 弹窗 | 保存、更新、长度、项目隔离测试 | 保存后重新打开并执行任务 |
@@ -26,13 +26,13 @@
 | 非功能需求 | 实现证据 | 验证 |
 | --- | --- | --- |
 | NFR-01 路径安全 | lexical + realpath 检查、跳过符号链接 | `pathSafety.test.ts`、`projectService.test.ts` |
-| NFR-02 最小权限 | sandbox、contextIsolation、Preload 白名单 | 桌面启动检查、源码评审 |
-| NFR-03 可控 | 最大步骤、AbortSignal、逐次审批 | Agent 取消/步数单测、命令人工测试 |
-| NFR-04 可观察 | AgentEvent、timeline、output panel | 窗口检查和端到端视频 |
+| NFR-02 最小权限 | sandbox、contextIsolation、Preload 白名单 | `preload.test.ts`、桌面启动检查、源码评审 |
+| NFR-03 可控 | 最大步骤、AbortSignal、逐次审批、进程树终止 | Agent 取消/步数单测、命令超时/取消/子进程清理测试 |
+| NFR-04 可观察 | AgentEvent、timeline、output panel、任务历史 | 窗口检查、真实模型 38 条事件和端到端视频 |
 | NFR-05 可靠 | 严格响应解析、结构化工具错误和持久化 run 状态 | ModelClient、AgentLoop、RunHistoryStore 测试 |
 | NFR-06 性能 | 目录过滤、2,000 文件/1 MB 上限、目录懒渲染、UI 输出上限 | 项目服务单测、大项目人工检查 |
 | NFR-07 可维护 | contracts、ModelClient、ToolRegistry 接口 | 模块依赖评审、类型检查 |
-| NFR-08 可测试 | 核心模块无 Electron 依赖 | 当前 34 项自动化测试 |
+| NFR-08 可测试 | 核心模块与 Preload/配置边界可隔离验证 | 当前 50 项自动化测试 |
 
 ## 交付追踪
 
