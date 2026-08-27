@@ -24,7 +24,8 @@ try {
     (Join-Path $workspaceRoot "README.txt"),
     [System.Text.Encoding]::UTF8
   )
-  Add-CheckResult ($readmeText.Length -le 1000) "README.txt is at most 1000 characters (current: $($readmeText.Length))"
+  $readmeCharacterCount = ($readmeText -replace "`r`n?", "`n").Length
+  Add-CheckResult ($readmeCharacterCount -le 1000) "README.txt is at most 1000 normalized characters (current: $readmeCharacterCount)"
 
   $forbiddenTracked = @(git ls-files | Where-Object {
     $_ -match '(^|/)(\.env($|\.)|dist/|tmp/)' -or

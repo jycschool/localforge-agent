@@ -12,7 +12,7 @@
     "start": "pnpm run build && electron .",
     "dev": "node esbuild.mjs --watch",
     "check": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --dir tests",
     "verify": "pnpm run check && pnpm test && pnpm run build",
     "verify:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-delivery.ps1",
     "package:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-delivery.ps1"

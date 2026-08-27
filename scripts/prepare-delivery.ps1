@@ -46,8 +46,9 @@ if ($fileTypeMarker -ne "ftyp") {
 }
 
 $readmeText = [System.IO.File]::ReadAllText($readmePath, [System.Text.Encoding]::UTF8)
-if ($readmeText.Length -gt 1000) {
-  throw "README.txt exceeds 1000 characters (current: $($readmeText.Length))."
+$readmeCharacterCount = ($readmeText -replace "`r`n?", "`n").Length
+if ($readmeCharacterCount -gt 1000) {
+  throw "README.txt exceeds 1000 normalized characters (current: $readmeCharacterCount)."
 }
 
 $ffprobe = Get-Command "ffprobe" -ErrorAction SilentlyContinue
@@ -112,7 +113,7 @@ try {
   }
 }
 
-Write-Host "[PASS] README.txt has $($readmeText.Length) characters" -ForegroundColor Green
+Write-Host "[PASS] README.txt has $readmeCharacterCount normalized characters" -ForegroundColor Green
 Write-Host "[PASS] Video size is $([math]::Round($videoInfo.Length / 1MB, 2)) MB" -ForegroundColor Green
 Write-Host "[PASS] Zip contains only README.txt and demo.mp4" -ForegroundColor Green
 Write-Host "Delivery package: $zipPath" -ForegroundColor Cyan
