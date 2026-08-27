@@ -1,51 +1,55 @@
 # LocalForge
 
-LocalForge 是一个面向 Visual Studio Code 的本地编程智能体。它在编辑器侧边栏中接收任务，读取和修改当前工作区代码、执行本地命令与测试，并把过程和变更以可审查的方式呈现给用户。
+LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用 Codex 风格的工作台：左侧显示项目结构与变更文件，中间提供只读代码和任务前后差异，右侧展示 Agent 任务时间线、命令审批和自然语言输入。
 
 公开仓库：https://github.com/jycschool/localforge-agent
 
-项目不会调用或封装现有 coding agent，也不依赖 agent 框架。模型交互循环、上下文管理、工具协议、本地执行、停止条件和错误处理均在本仓库内实现。
+项目不依赖 VS Code，也不调用或封装现有 coding agent；Electron 只提供桌面窗口。模型消息循环、原生 tool calling 调度、上下文组织、文件工具、本地命令、停止条件、错误处理和变更跟踪均在本仓库内实现。
 
-## 当前阶段
+## 当前能力
 
-- 已完成需求、用例、总体设计、界面原型、测试计划和风险分析。
-- 已搭建 VS Code 扩展，并实现最小 agent 循环、本地文件工具、命令审批、停止与 Diff 入口。
-- 计划于 2026 年 9 月 2 日前完成演示版本、视频和提交材料。
+- 打开本地项目并显示过滤后的目录结构，选择文件进行只读预览。
+- 使用 OpenAI-compatible `/chat/completions` 和原生 tool calling 完成多轮任务。
+- 列表、搜索、读取、精确替换和写入工作区文件。
+- 对每条本地命令显示原因、命令和工作目录，并由用户逐次批准。
+- 支持命令超时、输出截断、任务取消和最大步骤限制。
+- 展示模型回合、工具结果、运行输出、变更文件及任务前后双栏 Diff。
+- API Key 使用操作系统安全存储加密，也可通过 `LOCALFORGE_API_KEY` 提供。
 
-## 本地开发
+## 本地运行
 
-要求：Node.js 20 或更高版本、pnpm、VS Code 1.95 或更高版本。
+要求：Node.js 22.12 或更高版本、pnpm。
 
 ```powershell
 pnpm install
 pnpm run check
 pnpm test
-pnpm run build
+pnpm start
 ```
 
-在 VS Code 中打开本仓库，按 `F5` 启动 Extension Development Host。随后打开 LocalForge 侧边栏，通过 `LocalForge: Set API Key` 保存密钥，并在设置中确认 API Base URL 和模型名称。
+启动后点击“打开项目”，在“设置”中填写 OpenAI-compatible API 地址、模型名称和 API Key，然后在右侧输入任务。也可以先执行 `pnpm build`，只生成桌面程序的开发构建。
 
-当前模型层使用 OpenAI-compatible `/chat/completions` 与原生 tool calling，不依赖 agent SDK。
+## 项目结构
 
-## 已实现的最小闭环
-
-- 自动携带活动文件和选中代码。
-- 文件列表、文本搜索、带行号读取、精确替换和写文件。
-- 本地命令逐次确认、超时、输出截断和取消。
-- 模型输出与工具结果循环、最大步骤限制和错误回传。
-- 运行时间线、停止按钮、变更文件列表和任务前后 Diff。
-
-## 文档
-
-文档入口见 [docs/README.md](docs/README.md)。
-
-## 预期体验
-
-用户打开一个本地项目，在 LocalForge 侧边栏描述任务。智能体会展示正在读取的文件、计划执行的命令、产生的代码变更和测试结果；敏感命令需要用户确认，最终结果可以通过编辑器 Diff 检查。
+```text
+src/
+  agent/       Agent 循环、工具注册与变更跟踪
+  core/        模型消息和工具协议
+  desktop/     桌面 IPC、配置与项目读取服务
+  model/       OpenAI-compatible 模型客户端
+  renderer/    项目树、代码预览、时间线和审批界面
+  tools/       受工作区边界保护的本地工具
+  main.ts      Electron 主进程与任务编排
+  preload.ts   最小权限的安全桥接
+tests/         Agent、工具、路径和桌面项目服务测试
+docs/          软件生命周期文档、ADR 与界面原型
+```
 
 ## 开发原则
 
-1. 核心 agent 逻辑自行实现。
-2. 所有代码执行和文件操作均发生在用户选定的本地工作区。
-3. 默认可观察、可停止、可审查，不把模型输出直接等同于成功。
-4. API 凭据只通过环境变量或 VS Code SecretStorage 保存。
+1. 核心 Agent 逻辑自行实现，桌面框架不参与模型决策。
+2. 文件和命令操作只针对用户明确打开的本地项目。
+3. 默认可观察、可停止、可审查，不把模型文字直接当作成功证据。
+4. 首版是 Agent 工作台，不追求完整编辑器、调试器或版本控制功能。
+
+完整需求、用例、设计、计划和追踪关系见 [docs/README.md](docs/README.md)。计划于 2026 年 9 月 2 日前完成真实模型端到端验证、演示视频和最终材料。

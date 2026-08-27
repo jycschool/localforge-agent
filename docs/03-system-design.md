@@ -2,80 +2,79 @@
 
 ## 1. 设计目标
 
-系统应当让用户始终知道 agent 正在做什么、为什么需要权限、改了哪些代码以及怎样验证。实现重点放在可解释的本地 agent 闭环，而不是 IDE 基础设施或界面动画。
+LocalForge 必须让用户知道 Agent 正在做什么、为什么需要权限、修改了哪些代码以及怎样验证。独立桌面壳只负责项目导航、代码只读预览和过程呈现；核心工作是可解释、可停止、可测试的本地 Agent 闭环。
 
 ## 2. 总体架构
 
 ```mermaid
 flowchart LR
-    U[开发者] --> V[VS Code 侧边栏]
-    V --> C[Extension Controller]
-    C --> A[Agent Loop]
-    A --> M[OpenAI-compatible Model Client]
-    M --> A
-    A --> R[Tool Registry]
-    R --> F[Workspace File Tools]
-    R --> S[Local Command Tool]
-    F --> W[(VS Code Workspace)]
-    S --> P[Child Process]
-    A --> E[Run Event Stream]
-    E --> V
-    C --> D[Diff / Editor Integration]
+    U[开发者] --> R[Renderer 工作台]
+    R --> P[Preload 白名单桥接]
+    P --> C[Electron Main Controller]
+    C --> A[AgentLoop]
+    A <--> M[OpenAI-compatible ModelClient]
+    A --> T[ToolRegistry]
+    T --> F[WorkspaceTools]
+    T --> X[CommandTool]
+    F --> W[(已打开的本地项目)]
+    X --> O[受审批的本地进程]
+    A --> E[AgentEvent Stream]
+    E --> C
+    C --> R
+    C --> S[ConfigStore / safeStorage]
+    C --> D[ChangeTracker / Diff]
 ```
 
-## 3. 模块职责
+## 3. 进程与模块职责
 
 | 模块 | 职责 | 不负责的内容 |
 | --- | --- | --- |
-| AgentPanel | Webview 生命周期、输入、时间线、审批和按钮事件 | 模型协议与文件操作 |
-| ExtensionController | 连接 UI、配置、密钥、agent 和 Diff | 决定模型下一步行为 |
-| AgentLoop | 消息历史、工具调度、循环、取消、终止与事件 | 具体工具实现 |
-| ModelClient | HTTP 请求、响应解析、tool call 规范化 | 自动执行工具 |
-| ToolRegistry | 工具 schema、参数校验、调用与统一错误 | UI 渲染 |
-| WorkspaceTools | 搜索、读取、修改和路径安全 | 网络请求 |
-| CommandTool | 本地进程、超时、输出上限、取消 | 解释命令语义 |
-| ChangeTracker | 修改前快照、变更文件、Diff 数据 | Git 提交与推送 |
+| `renderer/app.ts` | 项目树、只读代码、时间线、审批、输出与 Diff | 文件系统和模型网络访问 |
+| `preload.ts` | 通过 contextBridge 暴露固定 IPC API | 任意 Node API 或动态通道 |
+| `main.ts` | 窗口安全策略、项目状态、IPC、任务编排和审批解析 | 决定模型下一步行为 |
+| `desktop/projectService.ts` | 过滤项目树、限制文件预览、真实路径检查 | 修改文件 |
+| `desktop/configStore.ts` | 配置验证、系统加密存储、环境变量覆盖 | 向 Renderer 暴露 Key 明文 |
+| `agent/agentLoop.ts` | 消息历史、工具调度、循环、取消、终止和事件 | 具体工具实现 |
+| `model/openAICompatibleClient.ts` | HTTP、响应解析和 tool call 规范化 | 自动执行工具 |
+| `agent/toolRegistry.ts` | 工具 schema、调用和统一错误结果 | UI 渲染 |
+| `tools/workspaceTools.ts` | 列表、搜索、读取、修改、命令和边界保护 | Git 提交与推送 |
+| `agent/changeTracker.ts` | 首次写入前快照和变更集合 | 撤销与版本控制 |
 
 ## 4. Agent 循环
 
 ```text
-initialize(messages, tools, limits)
+initialize(system, task, tools, limits)
 for step in 1..maxSteps:
-    response = model.complete(messages, tools, cancellation)
-    append(response)
-    if response has no tool calls:
-        finish with response text
-    for toolCall in response.toolCalls:
-        validate arguments and permission
-        result = execute locally or return structured error
-        append tool result using the same toolCall id
+    assistant = model.complete(messages, tools, signal)
+    append assistant
+    if assistant has no tool calls:
+        finish with its summary
+    for call in assistant.toolCalls:
+        parse arguments
+        execute registered tool or return structured error
+        append result with the same tool_call_id
         emit observable event
-stop with max-steps reason
+fail safely when the step limit is exhausted
 ```
 
-循环遵循以下原则：
-
-- 工具调用和结果严格通过 `tool_call_id` 配对。
-- 任何工具异常都被规范化为模型可理解且不会破坏协议的结果。
-- 模型的普通文本不是代码执行；只有显式工具调用能改变工作区。
-- 完成时记录验证证据；没有运行测试时必须明确说明。
+- 普通模型文本不能改变工作区；只有注册工具能产生本地副作用。
+- 工具调用和结果严格按 `tool_call_id` 配对。
+- 参数或工具错误被规范化并反馈模型，不破坏消息序列。
+- AbortSignal 同时控制模型请求、AgentLoop 和本地进程。
 
 ## 5. 状态机
 
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Preparing: 提交任务
-    Preparing --> CallingModel
-    CallingModel --> WaitingApproval: 高风险工具调用
-    CallingModel --> RunningTool: 无需审批
+    Idle --> CallingModel: 提交任务
+    CallingModel --> RunningTool: 只读/文件工具
+    CallingModel --> WaitingApproval: 命令工具
     WaitingApproval --> RunningTool: 允许
     WaitingApproval --> CallingModel: 拒绝结果
     RunningTool --> CallingModel: 工具结果
-    CallingModel --> Completed: 模型结束
-    CallingModel --> Failed: 请求或协议错误
-    RunningTool --> Failed: 不可恢复错误
-    Preparing --> Cancelled: 用户停止
+    CallingModel --> Completed: 无工具调用
+    CallingModel --> Failed: 请求/协议错误
     CallingModel --> Cancelled: 用户停止
     RunningTool --> Cancelled: 用户停止
     Completed --> Idle
@@ -85,55 +84,44 @@ stateDiagram-v2
 
 ## 6. 工具协议
 
-首版工具：
-
-| 工具 | 核心参数 | 输出 | 风险等级 |
+| 工具 | 核心参数 | 输出 | 权限 |
 | --- | --- | --- | --- |
-| `list_files` | `glob`, `limit` | 相对路径列表 | 只读 |
-| `search_text` | `query`, `include`, `limit` | 文件、行号、文本 | 只读 |
-| `read_file` | `path`, `startLine`, `endLine` | 带行号文本 | 只读 |
-| `replace_in_file` | `path`, `oldText`, `newText` | 修改统计与文件路径 | 写入 |
-| `write_file` | `path`, `content` | 创建或覆盖结果 | 写入 |
-| `run_command` | `command`, `reason` | exit code、stdout、stderr、超时状态 | 执行 |
+| `list_files` | `glob`, `limit` | 相对路径列表 | 自动，只读 |
+| `search_text` | `query`, `include`, `limit` | 文件、行号、文本 | 自动，只读 |
+| `read_file` | `path`, `startLine`, `endLine` | 带行号内容 | 自动，只读 |
+| `replace_in_file` | `path`, `oldText`, `newText` | 修改统计 | 自动，项目内写入 |
+| `write_file` | `path`, `content` | 创建/覆盖结果 | 自动，项目内写入 |
+| `run_command` | `command`, `reason` | exit code、输出、超时 | 每次人工批准 |
 
-参数首先经过结构校验。路径经标准化和绝对路径解析后，必须仍位于工作区根目录。读取和命令输出均设置字符上限，并显式标注截断。
+文件路径先做词法范围检查，再对既有目标或最近既有父目录做 `realpath` 检查。符号链接被跳过；依赖、缓存和构建目录不会进入默认遍历。命令 cwd 固定为项目根目录，输出保留长度受配置限制。
 
-## 7. 上下文管理
+## 7. 桌面安全边界
 
-上下文由四层构成：
+- Renderer 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`。
+- Preload 只暴露预定义方法，不向页面提供 `ipcRenderer`。
+- 拒绝新窗口与页面导航；CSP 只允许加载本地脚本和样式。
+- 动态内容通过 `textContent` 渲染，模型文本不会拼入 HTML。
+- API Key 在主进程读取；系统支持时由 `safeStorage` 加密，Renderer 不获得明文。
+- 同一时刻只运行一个任务，运行期间禁止切换项目。
 
-1. 稳定系统说明：角色、工作区、工具约束、完成标准。
-2. 用户任务：原始需求、活动文件、选区和显式附加文件。
-3. 运行历史：模型回复、tool call 与 tool result。
-4. 压缩摘要：接近上下文上限时保留目标、决策、已改文件、错误和待办。
+## 8. 上下文与变更审查
 
-首版使用字符和消息数预算，优先裁剪重复命令输出。任何压缩都不能丢失当前任务、未解决错误、已修改文件和审批结果。
+系统提示包含角色、工作区约束、审批和验证原则。用户任务可带当前选中文件路径；模型必须通过文件工具读取实际内容。消息历史保留每轮回复、tool call 与 tool result。
 
-## 8. 本地执行与安全
+ChangeTracker 在任务中对每个文件只捕获一次原始内容。任务结束后主进程读取当前内容，Renderer 提供双栏只读对比。首版不自动提交、推送或撤销，避免扩大 Agent 权限。
 
-- 进程工作目录固定为工作区根目录。
-- 命令默认需要逐次审批；只读文件工具自动执行。
-- 进程使用独立取消信号和超时，停止任务时终止进程树。
-- 不执行模型提供的工作区切换；不展开指向工作区外的文件路径。
-- API key 由 VS Code SecretStorage 提供，不写入消息、日志或配置文件。
-- UI 对命令、路径和输出进行文本转义，防止 Webview 注入。
-
-## 9. 变更审查
-
-ChangeTracker 在首次写入前保存文件原内容，在任务内维护变更集合。完成后 UI 展示文件名与增删摘要；用户可使用 VS Code Diff 比较任务前快照和当前内容。首版不自动执行 Git commit，以避免把模型行为扩大为外部状态变更。
-
-## 10. 错误处理
+## 9. 错误处理
 
 | 错误 | 处理 |
 | --- | --- |
-| 模型认证或限流 | 停止当前请求，保留历史，提示检查配置或稍后重试 |
-| tool call JSON 无效 | 返回结构化工具错误，允许模型修正一次 |
-| 文件并发变化 | 拒绝陈旧替换，要求重新读取 |
-| 命令超时 | 终止进程，返回已有输出和超时标志 |
-| 输出过长 | 保存必要尾部并返回截断标记 |
-| 最大步骤耗尽 | 安全结束，展示已完成内容和未完成原因 |
+| 模型认证、限流或无效响应 | 当前任务失败，保留时间线和已有变更 |
+| tool call JSON 无效 | 形成工具错误结果，允许模型后续修正 |
+| 路径越界或符号链接逃逸 | 拒绝操作并返回明确错误 |
+| 含糊文本替换 | 不写入，要求重新读取或缩小目标 |
+| 用户拒绝命令 | 不创建进程，将拒绝作为工具结果返回 |
+| 命令超时或用户停止 | 终止进程，返回已有输出或取消状态 |
+| 文件过多/过大 | 目录树最多 2,000 文件，预览文件最多 1 MB |
 
-## 11. 可扩展点
+## 10. 可扩展点
 
-ModelClient 与 ToolRegistry 使用接口隔离，将来可增加其他模型协议或工具，但首版不做动态插件系统、多 agent 调度和远程执行。
-
+ModelClient 和 ToolRegistry 已通过接口隔离，可增加其他兼容协议或工具。首版不加入多 Agent、远程执行、完整编辑器或动态插件，以保证 9 月 2 日前闭环稳定。

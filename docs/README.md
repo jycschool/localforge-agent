@@ -1,23 +1,24 @@
 # LocalForge 文档索引
 
-本目录覆盖从需求到交付的软件生命周期。文档会随实现持续修订，重要技术选择记录在决策文档中。
+本目录覆盖需求、设计、实现、测试与交付的软件生命周期。重要技术取舍使用 ADR 保留演进历史。
 
-| 文档 | 内容 | 当前状态 |
+| 文档 | 内容 | 状态 |
 | --- | --- | --- |
-| [01-product-requirements.md](01-product-requirements.md) | 背景、范围、功能与非功能需求、验收标准 | 基线版 |
-| [02-use-cases.md](02-use-cases.md) | 主要参与者、正常流程和异常流程 | 基线版 |
-| [03-system-design.md](03-system-design.md) | 架构、agent 循环、工具协议、上下文与安全设计 | 基线版 |
-| [04-ui-prototype.md](04-ui-prototype.md) | 界面原型、状态与关键交互 | 基线版 |
-| [05-project-plan.md](05-project-plan.md) | 2026-08-27 至 2026-09-02 的开发与交付计划 | 执行中 |
-| [06-test-plan.md](06-test-plan.md) | 单元、集成、端到端和人工验收计划 | 基线版 |
-| [07-risk-and-quality.md](07-risk-and-quality.md) | 风险、质量门禁、安全与提交合规 | 基线版 |
-| [08-traceability.md](08-traceability.md) | 需求、模块、测试和演示之间的追踪关系 | 基线版 |
-| [09-development-log.md](09-development-log.md) | 每日进展、验证证据和计划偏差 | 持续更新 |
-| [decisions/0001-vscode-extension.md](decisions/0001-vscode-extension.md) | 采用 VS Code 扩展形态的决策记录 | 已接受 |
+| [01-product-requirements.md](01-product-requirements.md) | 产品边界、功能/非功能需求和成功标准 | 已更新 |
+| [02-use-cases.md](02-use-cases.md) | 参与者、正常流程、异常流程与演示用例 | 已更新 |
+| [03-system-design.md](03-system-design.md) | 桌面架构、AgentLoop、工具、安全和错误处理 | 已更新 |
+| [04-ui-prototype.md](04-ui-prototype.md) | 独立桌面原型、状态与交互 | 已更新 |
+| [05-project-plan.md](05-project-plan.md) | 08-27 至 09-02 的开发、里程碑和冻结计划 | 执行中 |
+| [06-test-plan.md](06-test-plan.md) | 单元、集成、桌面和人工验收计划 | 执行中 |
+| [07-risk-and-quality.md](07-risk-and-quality.md) | 风险、安全、质量门禁和交付合规 | 已更新 |
+| [08-traceability.md](08-traceability.md) | 需求、源码、测试和演示证据追踪 | 已更新 |
+| [09-development-log.md](09-development-log.md) | 实际进展、验证证据、偏差与待办 | 持续更新 |
+| [decisions/0001-vscode-extension.md](decisions/0001-vscode-extension.md) | 初始 VS Code 形态决策 | 已被取代 |
+| [decisions/0002-standalone-desktop.md](decisions/0002-standalone-desktop.md) | 改为独立桌面 Agent 的决策 | 已接受 |
 
-## 文档维护规则
+## 维护规则
 
-- 需求发生变化时，同步更新需求编号、追踪矩阵和相关测试。
-- 架构级取舍使用 ADR 记录，不直接覆盖原有结论。
-- 每日收尾时更新计划中的实际进展、偏差和次日重点。
-- 发布前检查所有“待定”项、占位符和演示依赖。
+- 需求变化时同步更新编号、用例、设计、测试与追踪矩阵。
+- 架构级调整新增 ADR，不覆盖先前真实决策。
+- 每日收尾更新计划状态、日志、验证证据与剩余风险。
+- 发布前清理占位符，并确保文档、源码、视频和答辩表述一致。

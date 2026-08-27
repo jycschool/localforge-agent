@@ -1,26 +1,39 @@
 # 需求追踪矩阵
 
-该矩阵用于防止文档、实现、测试和视频演示相互脱节。模块与测试文件会在实现提交后补充精确路径。
+该矩阵把需求、实现、测试和视频证据连接起来，防止文档与成品脱节。
 
-| 需求 | 设计模块 | 计划测试 | 演示证据 |
+| 需求 | 设计/实现 | 计划测试 | 演示证据 |
 | --- | --- | --- | --- |
-| FR-01 任务提交 | `src/panel/localForgeView.ts` | 扩展消息测试 | 在侧边栏发送真实任务 |
-| FR-02 工作区上下文 | `buildTaskWithEditorContext` | 活动文件与选区测试 | 选中代码后直接提问 |
-| FR-03 检索和读取 | `src/tools/workspaceTools.ts` | T-02、路径安全单测 | 时间线展示读取相关文件 |
-| FR-04 修改文件 | WorkspaceTools、`ChangeTracker` | T-03、T-04 | 源文件和测试文件产生 Diff |
-| FR-05 执行命令 | `run_command`、侧边栏审批 | T-05、T-06、T-07 | 审批并运行测试 |
-| FR-06 工具循环 | `src/agent/agentLoop.ts` | `tests/agentLoop.test.ts` | 失败结果进入下一轮修复 |
-| FR-07 停止条件 | AgentLoop、AbortController | T-08、T-09 | 展示停止按钮和最大步数配置 |
-| FR-08 过程观察 | `AgentEvent`、LocalForgeView | UI 状态测试 | 时间线展示读、改、测过程 |
-| FR-09 变更审查 | ChangeTracker、DiffContentProvider | T-11 | 打开任务前后 Diff |
-| FR-10 验证实现 | `run_command`、最终摘要提示 | T-12 | 首测失败、二测通过 |
-| FR-11 密钥安全 | VS Code SecretStorage | T-10、提交扫描 | 使用设置命令录入，不出现在视频 |
-| FR-12 模型配置 | OpenAICompatibleClient | 配置解析测试 | 展示模型名称，不展示密钥 |
+| FR-01 打开项目 | `main.ts`、`desktop/projectService.ts` | 项目扫描、目录选择人工测试 | 打开演示目录并显示项目名 |
+| FR-02 查看代码 | `renderer/app.ts`、`readProjectFile` | UTF-8、大小和越界测试 | 从目录树打开源文件 |
+| FR-03 提交任务 | `renderer/app.ts`、`main.ts` | 空任务、并发任务和无项目测试 | 在独立窗口提交真实任务 |
+| FR-04 检索读取 | `tools/workspaceTools.ts` | `workspaceTools.test.ts`、路径测试 | 时间线展示搜索和读取 |
+| FR-05 修改文件 | WorkspaceTools、ChangeTracker | 精确替换、新建、含糊匹配 | 源文件和测试文件产生变更 |
+| FR-06 执行命令 | `run_command`、主进程审批 | 批准、拒绝、超时、取消 | 展示审批框并运行测试 |
+| FR-07 工具循环 | `agent/agentLoop.ts` | `agentLoop.test.ts` | 失败输出进入下一轮 |
+| FR-08 停止条件 | AgentLoop、AbortController | 取消和最大步骤测试 | 展示停止按钮和步骤设置 |
+| FR-09 过程观察 | AgentEvent、Renderer timeline | 事件映射和桌面人工测试 | 时间线展示读、改、测 |
+| FR-10 变更审查 | ChangeTracker、Renderer Diff | 首次快照和双栏渲染 | 从变更列表打开 Diff |
+| FR-11 验证证据 | `run_command`、output panel | exit code、stdout/stderr | 首测失败、二测通过 |
+| FR-12 模型配置 | ConfigStore、ModelClient | URL/数值验证、Key 隔离 | 展示模型名，不展示 Key |
+
+## 非功能追踪
+
+| 非功能需求 | 实现证据 | 验证 |
+| --- | --- | --- |
+| NFR-01 路径安全 | lexical + realpath 检查、跳过符号链接 | `pathSafety.test.ts`、`projectService.test.ts` |
+| NFR-02 最小权限 | sandbox、contextIsolation、Preload 白名单 | 桌面启动检查、源码评审 |
+| NFR-03 可控 | 最大步骤、AbortSignal、逐次审批 | Agent 取消/步数单测、命令人工测试 |
+| NFR-04 可观察 | AgentEvent、timeline、output panel | 窗口检查和端到端视频 |
+| NFR-05 可靠 | 结构化工具错误和 run 状态 | AgentLoop 工具错误测试 |
+| NFR-06 性能 | 目录过滤、2,000 文件/1 MB 上限 | 项目服务单测、大项目人工检查 |
+| NFR-07 可维护 | contracts、ModelClient、ToolRegistry 接口 | 模块依赖评审、类型检查 |
+| NFR-08 可测试 | 核心模块无 Electron 依赖 | 当前 14 项自动化测试 |
 
 ## 交付追踪
 
 | 交付物 | 来源 | 完成检查 |
 | --- | --- | --- |
-| 公开 Git 仓库 | 全部源码与文档 | URL 可访问，提交历史真实，截止后无新推送 |
-| README.txt | README 与最终实现摘要 | 不超过 1000 汉字，包含 URL、运行方法、特色 |
-| 2 分钟视频 | UC-01/UC-03 演示用例 | MP4，小于 200 MB，不泄露密钥，展示完整闭环 |
+| 公开 Git 仓库 | 全部源码与文档 | URL 可访问，历史真实，截止后无推送 |
+| README.txt | README 与最终实现摘要 | 少于 1000 汉字，含 URL、运行和特色 |
+| 两分钟视频 | UC-01、UC-02、UC-04 | MP4 小于 200 MB，无凭据，展示完整闭环 |
