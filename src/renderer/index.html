@@ -118,7 +118,12 @@
               <h2>Agent 任务</h2>
               <span id="run-status" class="run-status idle"><span></span> 待命</span>
             </div>
-            <button id="stop-run" class="button button-danger" type="button" disabled>停止</button>
+            <div class="agent-header-actions">
+              <button id="history-button" class="button button-ghost" type="button" disabled>
+                历史 <span id="history-count">0</span>
+              </button>
+              <button id="stop-run" class="button button-danger" type="button" disabled>停止</button>
+            </div>
           </header>
           <section id="timeline" class="timeline" aria-live="polite">
             <div id="timeline-empty" class="timeline-empty">
@@ -255,6 +260,27 @@
             <button id="cancel-memory" class="button button-secondary" type="button">取消</button>
             <button id="save-memory" class="button button-primary" type="submit">保存记忆</button>
           </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="history-dialog" class="modal history-modal">
+      <form method="dialog">
+        <header>
+          <div>
+            <span class="modal-eyebrow">LOCAL RUN HISTORY</span>
+            <h2>任务历史</h2>
+            <p>按项目保存在本机，包含执行状态、过程事件和改动文件。</p>
+          </div>
+          <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
+        </header>
+        <section class="history-layout">
+          <nav id="history-list" class="history-list" aria-label="历史任务列表"></nav>
+          <article id="history-detail" class="history-detail" aria-live="polite"></article>
+        </section>
+        <footer>
+          <span>最多保留当前项目最近 50 次任务，不写入 Git 仓库。</span>
+          <button class="button button-primary" value="default" type="submit">完成</button>
         </footer>
       </form>
     </dialog>

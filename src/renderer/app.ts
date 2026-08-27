@@ -5,6 +5,9 @@ import type {
   ProjectContextSnapshot,
   ProjectSnapshot,
   PublicSettings,
+  RunHistoryDetail,
+  RunHistoryStatus,
+  RunHistorySummary,
 } from "../desktop/contracts";
 import { fileVisualFor } from "./fileIcons";
 
@@ -27,6 +30,7 @@ let selectedFile: string | null = null;
 let changes: ChangedFileSnapshot[] = [];
 let currentSettings: PublicSettings | null = null;
 let activeApproval: CommandApprovalRequest | null = null;
+let runHistory: RunHistorySummary[] = [];
 let projectContext: ProjectContextSnapshot = {
   skills: [],
   memory: "",
@@ -55,6 +59,8 @@ const outputLog = element<HTMLElement>("output-log");
 const clearOutputButton = element<HTMLButtonElement>("clear-output");
 const timeline = element<HTMLElement>("timeline");
 const runStatus = element<HTMLElement>("run-status");
+const historyButton = element<HTMLButtonElement>("history-button");
+const historyCount = element<HTMLElement>("history-count");
 const stopRunButton = element<HTMLButtonElement>("stop-run");
 const taskForm = element<HTMLFormElement>("task-form");
 const taskInput = element<HTMLTextAreaElement>("task-input");
@@ -93,6 +99,9 @@ const approvalCommand = element<HTMLElement>("approval-command");
 const approvalCwd = element<HTMLElement>("approval-cwd");
 const approveCommandButton = element<HTMLButtonElement>("approve-command");
 const rejectCommandButton = element<HTMLButtonElement>("reject-command");
+const historyDialog = element<HTMLDialogElement>("history-dialog");
+const historyList = element<HTMLElement>("history-list");
+const historyDetail = element<HTMLElement>("history-detail");
 const toast = element<HTMLElement>("toast");
 const workbench = element<HTMLElement>("workbench");
 const leftResizer = element<HTMLElement>("left-resizer");
@@ -105,6 +114,7 @@ clearOutputButton.addEventListener("click", () => {
   outputLog.textContent = "等待 Agent 运行命令或工具…";
 });
 settingsButton.addEventListener("click", () => void openSettings());
+historyButton.addEventListener("click", () => void openHistory());
 stopRunButton.addEventListener("click", () => void stopRun());
 taskForm.addEventListener("submit", (event) => void startRun(event));
 skillsButton.addEventListener("click", openSkills);
@@ -135,6 +145,7 @@ api.onChangesUpdated((nextChanges) => {
   changes = nextChanges;
   renderChanges();
   void refreshProject(false);
+  void loadRunHistory();
 });
 
 void initialize();
@@ -158,13 +169,14 @@ async function selectProject(): Promise<void> {
     selectedFile = null;
     changes = [];
     selectedSkillIds.clear();
+    runHistory = [];
     projectContext = { skills: [], memory: "", maxMemoryChars: 12_000, maxSelectedSkills: 8 };
     treeInitialized = false;
     expandedDirectories.clear();
     renderProject();
     renderChanges();
     showProjectWelcome();
-    await loadProjectContext();
+    await Promise.all([loadProjectContext(), loadRunHistory()]);
   } catch (error) {
     notify(errorMessage(error));
   }
@@ -505,6 +517,7 @@ async function startRun(event: SubmitEvent): Promise<void> {
     setRunning(true);
     taskInput.value = "";
     clearTimeline();
+    void loadRunHistory();
   } catch (error) {
     notify(errorMessage(error));
   }
@@ -630,6 +643,7 @@ function setRunning(isRunning: boolean, failed = false): void {
   openProjectButton.disabled = isRunning;
   skillsButton.disabled = isRunning || !project;
   memoryButton.disabled = isRunning || !project;
+  historyButton.disabled = !project;
   setRunStatus(isRunning ? "运行中" : failed ? "出错" : "待命", isRunning ? "running" : failed ? "error" : "idle");
 }
 
@@ -696,6 +710,246 @@ function notify(message: string): void {
   toast.textContent = message;
   toast.classList.add("visible");
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 3_200);
+}
+
+async function loadRunHistory(showMessage = false): Promise<void> {
+  if (!project) {
+    runHistory = [];
+    renderHistoryCount();
+    return;
+  }
+  try {
+    runHistory = await api.listRunHistory();
+    renderHistoryCount();
+    if (historyDialog.open) {
+      renderHistoryList();
+    }
+    if (showMessage) {
+      notify(`已读取 ${runHistory.length} 条任务历史。`);
+    }
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+function renderHistoryCount(): void {
+  historyCount.textContent = String(runHistory.length);
+  historyButton.disabled = !project;
+}
+
+async function openHistory(): Promise<void> {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  await loadRunHistory();
+  renderHistoryList();
+  historyDialog.showModal();
+  const first = runHistory[0];
+  if (first) {
+    await showHistoryDetail(first.id);
+  } else {
+    renderEmptyHistoryDetail();
+  }
+}
+
+function renderHistoryList(selectedId?: string): void {
+  historyList.replaceChildren();
+  if (runHistory.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "history-list-empty";
+    empty.textContent = "还没有任务记录";
+    historyList.append(empty);
+    return;
+  }
+  for (const run of runHistory) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "history-item";
+    button.classList.toggle("selected", run.id === selectedId);
+    const row = document.createElement("span");
+    row.className = "history-item-row";
+    const status = document.createElement("span");
+    status.className = `history-status ${run.status}`;
+    status.textContent = historyStatusLabel(run.status);
+    const date = document.createElement("time");
+    date.dateTime = run.createdAt;
+    date.textContent = formatHistoryDate(run.createdAt);
+    row.append(status, date);
+    const task = document.createElement("strong");
+    task.textContent = run.task;
+    const meta = document.createElement("small");
+    meta.textContent = `${run.steps} 步 · ${run.changedFiles.length} 个改动文件`;
+    button.append(row, task, meta);
+    button.addEventListener("click", () => void showHistoryDetail(run.id));
+    historyList.append(button);
+  }
+}
+
+async function showHistoryDetail(id: string): Promise<void> {
+  renderHistoryList(id);
+  historyDetail.replaceChildren(historyLoading("正在读取任务详情…"));
+  try {
+    const detail = await api.getRunHistory(id);
+    renderHistoryDetail(detail);
+  } catch (error) {
+    historyDetail.replaceChildren(historyLoading(errorMessage(error)));
+  }
+}
+
+function renderHistoryDetail(detail: RunHistoryDetail): void {
+  historyDetail.replaceChildren();
+  const heading = document.createElement("header");
+  const headingCopy = document.createElement("div");
+  const status = document.createElement("span");
+  status.className = `history-status ${detail.status}`;
+  status.textContent = historyStatusLabel(detail.status);
+  const task = document.createElement("h3");
+  task.textContent = detail.task;
+  const timestamp = document.createElement("time");
+  timestamp.dateTime = detail.createdAt;
+  timestamp.textContent = `${formatHistoryDate(detail.createdAt)} · ${detail.steps} 步 · ${detail.eventCount} 条事件`;
+  headingCopy.append(status, task, timestamp);
+  heading.append(headingCopy);
+
+  const summary = document.createElement("section");
+  summary.className = "history-summary";
+  const summaryTitle = document.createElement("strong");
+  summaryTitle.textContent = "执行结果";
+  const summaryCopy = document.createElement("p");
+  summaryCopy.textContent = detail.summary;
+  summary.append(summaryTitle, summaryCopy);
+
+  const context = document.createElement("div");
+  context.className = "history-context";
+  if (detail.selectedFile) {
+    context.append(historyChip(`文件 · ${detail.selectedFile}`));
+  }
+  if (detail.skillIds.length > 0) {
+    context.append(historyChip(`${detail.skillIds.length} 个 Skill`));
+  }
+  if (detail.changedFiles.length > 0) {
+    context.append(historyChip(`${detail.changedFiles.length} 个改动文件`));
+  }
+
+  const events = document.createElement("section");
+  events.className = "history-events";
+  const eventsTitle = document.createElement("strong");
+  eventsTitle.textContent = "执行过程";
+  events.append(eventsTitle);
+  const eventList = document.createElement("div");
+  eventList.className = "history-event-list";
+  for (const event of detail.events) {
+    const item = document.createElement("div");
+    item.className = `history-event ${historyEventState(event)}`;
+    const mark = document.createElement("span");
+    mark.setAttribute("aria-hidden", "true");
+    const copy = document.createElement("p");
+    copy.textContent = historyEventText(event);
+    item.append(mark, copy);
+    eventList.append(item);
+  }
+  if (detail.events.length === 0) {
+    eventList.append(historyLoading("没有可显示的过程事件。"));
+  }
+  events.append(eventList);
+
+  const files = document.createElement("section");
+  files.className = "history-files";
+  const filesTitle = document.createElement("strong");
+  filesTitle.textContent = "改动文件";
+  files.append(filesTitle);
+  if (detail.changedFiles.length === 0) {
+    const none = document.createElement("p");
+    none.textContent = "本次任务没有记录到文件改动。";
+    files.append(none);
+  } else {
+    const list = document.createElement("div");
+    for (const file of detail.changedFiles) {
+      const code = document.createElement("code");
+      code.textContent = file;
+      list.append(code);
+    }
+    files.append(list);
+  }
+
+  historyDetail.append(heading, summary);
+  if (context.childElementCount > 0) {
+    historyDetail.append(context);
+  }
+  historyDetail.append(events, files);
+}
+
+function renderEmptyHistoryDetail(): void {
+  historyDetail.replaceChildren(historyLoading("运行第一个 Agent 任务后，这里会显示完整记录。"));
+}
+
+function historyLoading(text: string): HTMLElement {
+  const value = document.createElement("p");
+  value.className = "history-empty";
+  value.textContent = text;
+  return value;
+}
+
+function historyChip(text: string): HTMLElement {
+  const chip = document.createElement("span");
+  chip.textContent = text;
+  return chip;
+}
+
+function historyStatusLabel(status: RunHistoryStatus): string {
+  const labels: Record<RunHistoryStatus, string> = {
+    running: "运行中",
+    completed: "已完成",
+    cancelled: "已停止",
+    failed: "失败",
+    interrupted: "意外中断",
+  };
+  return labels[status];
+}
+
+function formatHistoryDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf())
+    ? value
+    : new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(date);
+}
+
+function historyEventState(event: AgentEvent): "neutral" | "success" | "error" {
+  if (event.type === "run_failed" || event.type === "run_cancelled") {
+    return "error";
+  }
+  if (event.type === "run_completed" || (event.type === "tool_finished" && !event.result.isError)) {
+    return "success";
+  }
+  return "neutral";
+}
+
+function historyEventText(event: AgentEvent): string {
+  switch (event.type) {
+    case "run_started":
+      return `开始任务 · ${event.task}`;
+    case "model_started":
+      return `模型请求 · 第 ${event.step} 步`;
+    case "assistant_message":
+      return `Agent · ${event.text}`;
+    case "tool_started":
+      return `${toolLabel(event.name)} · ${summarizeArguments(event.name, event.arguments)}`;
+    case "tool_finished":
+      return `${toolLabel(event.name)}${event.result.isError ? "失败" : "完成"} · ${event.durationMs} ms`;
+    case "run_completed":
+      return `任务完成 · ${event.summary}`;
+    case "run_cancelled":
+      return `任务已停止 · 共执行 ${event.steps} 步`;
+    case "run_failed":
+      return `任务失败 · ${event.message}`;
+  }
 }
 
 async function loadProjectContext(showMessage = false): Promise<void> {

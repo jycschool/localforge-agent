@@ -1,4 +1,4 @@
-import type { AgentEvent, CommandApprovalRequest } from "../core/protocol";
+import type { AgentEvent, ChatMessage, CommandApprovalRequest } from "../core/protocol";
 
 export const IPC_CHANNELS = {
   selectProject: "project:select",
@@ -6,6 +6,8 @@ export const IPC_CHANNELS = {
   readFile: "project:read-file",
   getProjectContext: "project:get-context",
   saveProjectMemory: "project:save-memory",
+  listRunHistory: "history:list",
+  getRunHistory: "history:get",
   getSettings: "settings:get",
   saveSettings: "settings:save",
   openModelScopeTokenPage: "app:open-modelscope-token-page",
@@ -81,6 +83,32 @@ export interface RunStartResult {
   message?: string;
 }
 
+export type RunHistoryStatus =
+  | "running"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "interrupted";
+
+export interface RunHistorySummary {
+  id: string;
+  task: string;
+  status: RunHistoryStatus;
+  summary: string;
+  steps: number;
+  selectedFile?: string;
+  skillIds: string[];
+  eventCount: number;
+  changedFiles: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RunHistoryDetail extends RunHistorySummary {
+  events: AgentEvent[];
+  messages: ChatMessage[];
+}
+
 export interface ChangedFileSnapshot {
   relativePath: string;
   originalContent: string | null;
@@ -93,6 +121,8 @@ export interface DesktopApi {
   readFile(relativePath: string): Promise<FileSnapshot>;
   getProjectContext(): Promise<ProjectContextSnapshot>;
   saveProjectMemory(memory: string): Promise<ProjectContextSnapshot>;
+  listRunHistory(): Promise<RunHistorySummary[]>;
+  getRunHistory(id: string): Promise<RunHistoryDetail>;
   getSettings(): Promise<PublicSettings>;
   saveSettings(input: SettingsInput): Promise<PublicSettings>;
   openModelScopeTokenPage(): Promise<void>;

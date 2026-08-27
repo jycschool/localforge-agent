@@ -20,6 +20,8 @@ const api: DesktopApi = {
   getProjectContext: () => ipcRenderer.invoke(IPC_CHANNELS.getProjectContext),
   saveProjectMemory: (memory) =>
     ipcRenderer.invoke(IPC_CHANNELS.saveProjectMemory, memory),
+  listRunHistory: () => ipcRenderer.invoke(IPC_CHANNELS.listRunHistory),
+  getRunHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.getRunHistory, id),
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.getSettings),
   saveSettings: (input: SettingsInput) => ipcRenderer.invoke(IPC_CHANNELS.saveSettings, input),
   openModelScopeTokenPage: () => ipcRenderer.invoke(IPC_CHANNELS.openModelScopeTokenPage),

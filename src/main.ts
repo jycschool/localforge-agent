@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { AgentLoop } from "./agent/agentLoop";
+import { AgentLoop, type AgentRunResult } from "./agent/agentLoop";
 import { ChangeTracker } from "./agent/changeTracker";
 import { buildSystemPrompt } from "./agent/systemPrompt";
 import { ToolRegistry } from "./agent/toolRegistry";
@@ -15,12 +15,14 @@ import {
 } from "./desktop/contracts";
 import { readProjectFile, scanProject } from "./desktop/projectService";
 import { ProjectContextStore } from "./desktop/projectContextStore";
+import { RunHistoryStore } from "./desktop/runHistoryStore";
 import { OpenAICompatibleClient } from "./model/openAICompatibleClient";
 import { createWorkspaceTools } from "./tools/workspaceTools";
 
 let mainWindow: BrowserWindow | null = null;
 let projectRoot: string | null = null;
 let activeController: AbortController | null = null;
+let activeRunId: string | null = null;
 const changeTracker = new ChangeTracker();
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
 const MODELSCOPE_TOKEN_URL = "https://modelscope.cn/my/myaccesstoken";
@@ -53,7 +55,11 @@ function createWindow(): void {
   });
 }
 
-function registerIpc(configStore: ConfigStore, contextStore: ProjectContextStore): void {
+function registerIpc(
+  configStore: ConfigStore,
+  contextStore: ProjectContextStore,
+  historyStore: RunHistoryStore,
+): void {
   ipcMain.handle(IPC_CHANNELS.selectProject, async () => {
     if (activeController) {
       throw new Error("Agent 运行期间不能切换项目。");
@@ -104,6 +110,16 @@ function registerIpc(configStore: ConfigStore, contextStore: ProjectContextStore
     await shell.openExternal(MODELSCOPE_TOKEN_URL);
   });
 
+  ipcMain.handle(IPC_CHANNELS.listRunHistory, () =>
+    historyStore.listRuns(requireProject(), activeRunId),
+  );
+  ipcMain.handle(IPC_CHANNELS.getRunHistory, (_event, id: unknown) => {
+    if (typeof id !== "string") {
+      throw new Error("任务历史 ID 无效。");
+    }
+    return historyStore.getRun(requireProject(), id, activeRunId);
+  });
+
   ipcMain.handle(IPC_CHANNELS.startRun, async (_event, request: RunRequest) => {
     const rootPath = requireProject();
     if (activeController) {
@@ -131,7 +147,18 @@ function registerIpc(configStore: ConfigStore, contextStore: ProjectContextStore
       maxOutputChars: settings.maxOutputChars,
     });
     const controller = new AbortController();
+    const runId = await historyStore.startRun(rootPath, {
+      task,
+      selectedFile: request.selectedFile,
+      skillIds: request.skillIds,
+    });
     activeController = controller;
+    activeRunId = runId;
+    const runEvents: AgentEvent[] = [];
+    const recordAndSendEvent = (event: AgentEvent): void => {
+      runEvents.push(event);
+      sendAgentEvent(event);
+    };
     const loop = new AgentLoop(
       new OpenAICompatibleClient({
         apiBaseUrl: settings.apiBaseUrl,
@@ -143,28 +170,55 @@ function registerIpc(configStore: ConfigStore, contextStore: ProjectContextStore
     const contextualTask = request.selectedFile
       ? `${task}\n\nThe user currently has ${request.selectedFile} selected in the read-only preview.`
       : task;
-    void loop
-      .run({
+    void (async () => {
+      let result: AgentRunResult | null = null;
+      try {
+        result = await loop.run({
         task: contextualTask,
         systemPrompt: buildSystemPrompt({ memory, skills }),
         maxSteps: settings.maxSteps,
         signal: controller.signal,
-        onEvent: sendAgentEvent,
+        onEvent: recordAndSendEvent,
         requestCommandApproval: requestApproval,
-      })
-      .finally(async () => {
-        activeController = null;
-        resolveAllApprovals(false);
-        const changes = await collectChanges(rootPath);
-        mainWindow?.webContents.send(IPC_CHANNELS.changesUpdated, changes);
-      })
-      .catch((error: unknown) => {
-        sendAgentEvent({
-          type: "run_failed",
-          message: error instanceof Error ? error.message : String(error),
-          steps: 0,
         });
-      });
+        const changes = await collectChangesSafely(rootPath);
+        await historyStore.finishRun(rootPath, runId, {
+          status: result.status,
+          summary: result.summary,
+          steps: result.steps,
+          events: runEvents,
+          messages: result.messages,
+          changedFiles: changes.map((change) => change.relativePath),
+        });
+        mainWindow?.webContents.send(IPC_CHANNELS.changesUpdated, changes);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const changes = await collectChangesSafely(rootPath);
+        if (result) {
+          console.error("Failed to finalize run history", error);
+        } else {
+          const failure: AgentEvent = { type: "run_failed", message, steps: 0 };
+          recordAndSendEvent(failure);
+          try {
+            await historyStore.finishRun(rootPath, runId, {
+              status: "failed",
+              summary: message,
+              steps: 0,
+              events: runEvents,
+              messages: [],
+              changedFiles: changes.map((change) => change.relativePath),
+            });
+          } catch (historyError) {
+            console.error("Failed to finalize run history", historyError);
+          }
+        }
+        mainWindow?.webContents.send(IPC_CHANNELS.changesUpdated, changes);
+      } finally {
+        activeController = null;
+        activeRunId = null;
+        resolveAllApprovals(false);
+      }
+    })();
     return { started: true };
   });
 
@@ -233,8 +287,22 @@ async function collectChanges(rootPath: string): Promise<ChangedFileSnapshot[]> 
   );
 }
 
+async function collectChangesSafely(rootPath: string): Promise<ChangedFileSnapshot[]> {
+  try {
+    return await collectChanges(rootPath);
+  } catch (error) {
+    console.error("Failed to collect changed files", error);
+    return [];
+  }
+}
+
 app.whenReady().then(() => {
-  registerIpc(new ConfigStore(), new ProjectContextStore(app.getPath("userData")));
+  const userDataPath = app.getPath("userData");
+  registerIpc(
+    new ConfigStore(),
+    new ProjectContextStore(userDataPath),
+    new RunHistoryStore(userDataPath),
+  );
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
