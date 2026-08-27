@@ -396,11 +396,22 @@ function showProjectWelcome(): void {
   const mark = document.createElement("div");
   mark.className = "welcome-mark";
   mark.textContent = "LF";
+  const kicker = document.createElement("span");
+  kicker.className = "welcome-kicker";
+  kicker.textContent = "LOCAL WORKSPACE";
   const heading = document.createElement("h1");
   heading.textContent = project ? `${project.name} 已就绪` : "从项目结构开始";
   const copy = document.createElement("p");
   copy.textContent = "从左侧选择文件查看代码，或直接在右侧描述希望 Agent 完成的任务。";
-  welcome.append(mark, heading, copy);
+  const hints = document.createElement("div");
+  hints.className = "welcome-hints";
+  hints.setAttribute("aria-label", "核心能力");
+  for (const hint of ["只读预览", "命令审批", "Diff 审查"]) {
+    const item = document.createElement("span");
+    item.textContent = hint;
+    hints.append(item);
+  }
+  welcome.append(mark, kicker, heading, copy, hints);
   previewContent.replaceChildren(welcome);
   selectedContext.textContent = "未选择文件";
 }
@@ -905,7 +916,7 @@ function setPanelWidth(side: "left" | "right", requestedWidth: number, persist =
   const minimum = side === "left" ? 210 : 300;
   const configuredMaximum = side === "left" ? 480 : 560;
   const otherWidth = panelWidth(side === "left" ? "right" : "left");
-  const availableMaximum = workbench.clientWidth - otherWidth - 360 - 10;
+  const availableMaximum = workbench.clientWidth - otherWidth - 360 - 14;
   const maximum = Math.max(minimum, Math.min(configuredMaximum, availableMaximum));
   const width = Math.round(Math.min(maximum, Math.max(minimum, requestedWidth)));
   const property = side === "left" ? "--left-panel-width" : "--right-panel-width";

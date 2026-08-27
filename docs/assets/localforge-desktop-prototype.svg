@@ -3,17 +3,25 @@
   <desc id="desc">A dark standalone desktop window with a project tree and changed files on the left, read-only code and command output in the center, and an agent task timeline with command approval on the right.</desc>
   <defs>
     <style>
-      .ui { font-family: Inter, "Segoe UI", Arial, sans-serif; fill: #e7e9ec; }
+      .ui { font-family: "Segoe UI Variable Text", Inter, "Segoe UI", Arial, sans-serif; fill: #f2f3f7; }
       .mono { font-family: "Cascadia Code", Consolas, monospace; fill: #cbd2da; }
-      .muted { fill: #8d96a3; }
-      .faint { fill: #66707d; }
+      .muted { fill: #9ba1ae; }
+      .faint { fill: #676e7d; }
       .tiny { font-size: 10px; }
       .small { font-size: 12px; }
       .body { font-size: 14px; }
       .heading { font-size: 15px; font-weight: 600; }
       .title { font-size: 18px; font-weight: 600; }
-      .rule { stroke: #2a3039; stroke-width: 1; }
+      .rule { stroke: #252a37; stroke-width: 1; }
       .code { font-size: 12px; }
+      [fill="#0b0d10"] { fill: #0b0c11; }
+      [fill="#0e1115"], [fill="#111419"] { fill: #11131a; }
+      [fill="#161a20"] { fill: #171a23; }
+      [fill="#1c2129"] { fill: #1d2130; }
+      [fill="#0c0f13"], [fill="#090b0e"] { fill: #0d0f15; }
+      [fill="#d9f99d"] { fill: #aebcff; }
+      [fill="#18200d"] { fill: #15182b; }
+      [stroke="#3a424d"] { stroke: #353b4b; }
     </style>
   </defs>
 
