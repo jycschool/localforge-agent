@@ -12,7 +12,9 @@
     "start": "pnpm run build && electron .",
     "dev": "node esbuild.mjs --watch",
     "check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify": "pnpm run check && pnpm test && pnpm run build",
+    "verify:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-delivery.ps1"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

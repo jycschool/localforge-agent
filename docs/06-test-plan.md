@@ -82,7 +82,7 @@
 
 ## 5. 发布门禁
 
-- `pnpm run check`、`pnpm test` 和 `pnpm run build` 全部通过。
+- `pnpm run verify`（类型检查、55 项测试、构建）与 `pnpm run verify:delivery` 全部通过。
 - 仓库扫描无 API Key、`.env`、大体积日志与构建产物。
 - 所有 P0 需求通过自动化或有记录的人工验收。
 - 演示任务在新克隆环境可复现三次。
