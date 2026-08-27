@@ -145,13 +145,80 @@ describe("OpenAICompatibleClient", () => {
       createClient().complete([], [], new AbortController().signal),
     ).rejects.toThrow("arguments must encode an object");
   });
+
+  it("retries a transient rate limit and honors Retry-After", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "slow down" } }), {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        }),
+      )
+      .mockResolvedValueOnce(successfulResponse("recovered"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const assistant = await createClient({ maxRetries: 1 }).complete(
+      [],
+      [],
+      new AbortController().signal,
+    );
+
+    expect(assistant.content).toBe("recovered");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a persistent rate limit with actionable guidance", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { message: "hourly quota reached" } }), {
+        status: 429,
+        headers: { "Retry-After": "0" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createClient({ maxRetries: 1 }).complete([], [], new AbortController().signal),
+    ).rejects.toThrow("请稍后重试或切换模型");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an HTTP error when the error body is not JSON", async () => {
+    const fetchMock = vi.fn(async () => new Response("bad gateway", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createClient().complete([], [], new AbortController().signal),
+    ).rejects.toThrow("Model request failed (400): bad gateway");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("can be cancelled while waiting to retry", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { message: "try later" } }), { status: 503 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const running = createClient({ maxRetries: 2, retryBaseDelayMs: 100 }).complete(
+      [],
+      [],
+      controller.signal,
+    );
+    setTimeout(() => controller.abort(), 5);
+
+    await expect(running).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });
 
-function createClient(): OpenAICompatibleClient {
+function createClient(
+  overrides: Partial<ConstructorParameters<typeof OpenAICompatibleClient>[0]> = {},
+): OpenAICompatibleClient {
   return new OpenAICompatibleClient({
     apiBaseUrl: "https://api-inference.modelscope.cn/v1",
     apiKey: "test-token",
     model: "deepseek-ai/DeepSeek-V4-Pro",
+    ...overrides,
   });
 }
 
@@ -173,4 +240,11 @@ function toolCall(id: string, argumentsValue: string): Record<string, unknown> {
     type: "function",
     function: { name: "read_file", arguments: argumentsValue },
   };
+}
+
+function successfulResponse(content: string): Response {
+  return new Response(
+    JSON.stringify({ choices: [{ message: { role: "assistant", content } }] }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
 }

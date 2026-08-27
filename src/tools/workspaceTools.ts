@@ -10,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import type {
   AgentTool,
   ToolExecutionContext,
@@ -340,16 +341,32 @@ function createRunCommandTool(rootPath: string, timeoutMs: number, maxOutputChar
       const command = requiredString(argumentsValue, "command");
       const reason = requiredString(argumentsValue, "reason");
       const approvalId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const approvalStartedAt = Date.now();
       const approved = await context.requestCommandApproval({
         id: approvalId,
         command,
         reason,
         cwd: rootPath,
       });
+      const approvalDurationMs = Date.now() - approvalStartedAt;
       if (!approved) {
-        return { content: JSON.stringify({ approved: false, error: "User rejected the command." }), isError: true };
+        return {
+          content: JSON.stringify({
+            approved: false,
+            approvalDurationMs,
+            error: "User rejected the command.",
+          }),
+          isError: true,
+        };
       }
-      return runCommand(command, rootPath, timeoutMs, maxOutputChars, context);
+      return runCommand(
+        command,
+        rootPath,
+        timeoutMs,
+        maxOutputChars,
+        approvalDurationMs,
+        context,
+      );
     },
   };
 }
@@ -359,33 +376,48 @@ async function runCommand(
   cwd: string,
   timeoutMs: number,
   maxOutputChars: number,
+  approvalDurationMs: number,
   context: ToolExecutionContext,
 ): Promise<ToolResult> {
+  if (context.signal.aborted) {
+    throw new DOMException("The command was aborted.", "AbortError");
+  }
   return new Promise<ToolResult>((resolve, reject) => {
+    const executionStartedAt = Date.now();
     const child = spawn(command, {
       cwd,
       shell: true,
       windowsHide: true,
       env: process.env,
+      detached: process.platform !== "win32",
     });
     let stdout = "";
     let stderr = "";
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     let timedOut = false;
     let settled = false;
+    let stopping = false;
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
 
-    const append = (current: string, chunk: Buffer): string =>
-      keepTail(current + chunk.toString("utf8"), maxOutputChars);
     child.stdout?.on("data", (chunk: Buffer) => {
-      stdout = append(stdout, chunk);
+      const next = appendBounded(stdout, stdoutDecoder.write(chunk), maxOutputChars);
+      stdout = next.value;
+      stdoutTruncated ||= next.truncated;
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      stderr = append(stderr, chunk);
+      const next = appendBounded(stderr, stderrDecoder.write(chunk), maxOutputChars);
+      stderr = next.value;
+      stderrTruncated ||= next.truncated;
     });
 
     const stop = (): void => {
-      if (!child.killed) {
-        child.kill();
+      if (stopping) {
+        return;
       }
+      stopping = true;
+      void terminateProcessTree(child);
     };
     const onAbort = (): void => stop();
     context.signal.addEventListener("abort", onAbort, { once: true });
@@ -393,6 +425,9 @@ async function runCommand(
       timedOut = true;
       stop();
     }, timeoutMs);
+    if (context.signal.aborted) {
+      stop();
+    }
 
     child.on("error", (error) => {
       cleanup();
@@ -406,6 +441,12 @@ async function runCommand(
       if (settled) {
         return;
       }
+      const stdoutEnd = appendBounded(stdout, stdoutDecoder.end(), maxOutputChars);
+      const stderrEnd = appendBounded(stderr, stderrDecoder.end(), maxOutputChars);
+      stdout = stdoutEnd.value;
+      stderr = stderrEnd.value;
+      stdoutTruncated ||= stdoutEnd.truncated;
+      stderrTruncated ||= stderrEnd.truncated;
       settled = true;
       if (context.signal.aborted) {
         reject(new DOMException("The command was aborted.", "AbortError"));
@@ -420,7 +461,9 @@ async function runCommand(
           timedOut,
           stdout,
           stderr,
-          outputTruncated: stdout.length >= maxOutputChars || stderr.length >= maxOutputChars,
+          outputTruncated: stdoutTruncated || stderrTruncated,
+          approvalDurationMs,
+          executionDurationMs: Date.now() - executionStartedAt,
         }),
         isError: timedOut || exitCode !== 0,
       });
@@ -431,6 +474,50 @@ async function runCommand(
       context.signal.removeEventListener("abort", onAbort);
     }
   });
+}
+
+async function terminateProcessTree(child: ReturnType<typeof spawn>): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  if (process.platform === "win32") {
+    await new Promise<void>((resolve) => {
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      killer.once("error", () => {
+        child.kill();
+        resolve();
+      });
+      killer.once("close", () => resolve());
+    });
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    child.kill("SIGTERM");
+  }
+  await new Promise((resolve) => setTimeout(resolve, 750));
+  if (child.exitCode === null && child.signalCode === null) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      child.kill("SIGKILL");
+    }
+  }
+}
+
+function appendBounded(
+  current: string,
+  next: string,
+  maximum: number,
+): { value: string; truncated: boolean } {
+  const combined = current + next;
+  return combined.length > maximum
+    ? { value: combined.slice(-maximum), truncated: true }
+    : { value: combined, truncated: false };
 }
 
 async function walkFiles(
@@ -552,10 +639,6 @@ function textResult(value: unknown, maxOutputChars: number): ToolResult {
       tail: content.slice(-maxOutputChars),
     }),
   };
-}
-
-function keepTail(value: string, maximum: number): string {
-  return value.length <= maximum ? value : value.slice(-maximum);
 }
 
 function normalizeRelative(value: string): string {

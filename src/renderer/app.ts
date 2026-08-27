@@ -557,7 +557,7 @@ function handleAgentEvent(event: AgentEvent): void {
       handleToolOutput(event.name, event.result.content);
       appendTimeline(
         event.result.isError ? `${toolLabel(event.name)}失败` : `${toolLabel(event.name)}完成`,
-        `${event.durationMs} ms`,
+        toolResultDetail(event.name, event.result.content, event.durationMs),
         event.result.isError ? "error" : "success",
       );
       break;
@@ -584,10 +584,11 @@ function handleToolOutput(toolName: string, raw: string): void {
     // Keep non-JSON tool output readable.
   }
   if (toolName === "run_command" && isRecord(value)) {
-    const command = typeof value.command === "string" ? `$ ${value.command}\n` : "";
+    const command = typeof value.command === "string" ? `$ ${value.command}` : "";
     const stdout = typeof value.stdout === "string" ? value.stdout : "";
     const stderr = typeof value.stderr === "string" ? value.stderr : "";
-    appendOutput(`${command}${stdout}${stderr}`.trim());
+    const status = commandStatus(value);
+    appendOutput([command, stdout, stderr, status].filter(Boolean).join("\n"));
     return;
   }
   appendOutput(`${toolLabel(toolName)}: ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`);
@@ -703,6 +704,69 @@ function summarizeArguments(name: string, args: Record<string, unknown>): string
     return args.glob;
   }
   return Object.keys(args).length ? JSON.stringify(args) : "准备执行";
+}
+
+function toolResultDetail(name: string, raw: string, durationMs: number): string {
+  if (name !== "run_command") {
+    return `${durationMs} ms`;
+  }
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!isRecord(value)) {
+      return `${durationMs} ms`;
+    }
+    if (value.approved === false) {
+      const approvalDuration = numericDuration(value.approvalDurationMs);
+      return approvalDuration === null
+        ? `用户已拒绝 · ${durationMs} ms`
+        : `用户已拒绝 · 等待 ${formatDuration(approvalDuration)}`;
+    }
+    const parts: string[] = [];
+    if (value.timedOut === true) {
+      parts.push("执行超时");
+    } else if (typeof value.exitCode === "number") {
+      parts.push(`退出码 ${value.exitCode}`);
+    }
+    if (value.outputTruncated === true) {
+      parts.push("输出已截断");
+    }
+    const executionDuration = numericDuration(value.executionDurationMs);
+    const approvalDuration = numericDuration(value.approvalDurationMs);
+    parts.push(
+      executionDuration === null
+        ? `${durationMs} ms`
+        : `执行 ${formatDuration(executionDuration)}`,
+    );
+    if (approvalDuration !== null && approvalDuration >= 500) {
+      parts.push(`批准等待 ${formatDuration(approvalDuration)}`);
+    }
+    return parts.join(" · ");
+  } catch {
+    return `${durationMs} ms`;
+  }
+}
+
+function numericDuration(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function formatDuration(durationMs: number): string {
+  return durationMs < 1_000 ? `${Math.round(durationMs)} ms` : `${(durationMs / 1_000).toFixed(1)} s`;
+}
+
+function commandStatus(value: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (value.approved === false) {
+    parts.push("[命令未执行：用户已拒绝]");
+  } else if (value.timedOut === true) {
+    parts.push("[命令超时，进程树已终止]");
+  } else if (typeof value.exitCode === "number") {
+    parts.push(`[退出码 ${value.exitCode}]`);
+  }
+  if (value.outputTruncated === true) {
+    parts.push("[输出过长，仅保留末尾内容]");
+  }
+  return parts.join(" ");
 }
 
 function notify(message: string): void {

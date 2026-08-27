@@ -9,10 +9,16 @@ export interface OpenAICompatibleConfig {
   apiBaseUrl: string;
   apiKey: string;
   model: string;
+  maxRetries?: number;
+  retryBaseDelayMs?: number;
 }
 
 const MAX_TOOL_CALLS = 32;
 const MAX_TOOL_ARGUMENT_CHARS = 100_000;
+const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_RETRY_BASE_DELAY_MS = 750;
+const MAX_RETRY_DELAY_MS = 15_000;
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 
 export class OpenAICompatibleClient implements ModelClient {
   public constructor(private readonly config: OpenAICompatibleConfig) {}
@@ -23,29 +29,50 @@ export class OpenAICompatibleClient implements ModelClient {
     signal: AbortSignal,
   ): Promise<Extract<ChatMessage, { role: "assistant" }>> {
     const endpoint = `${this.config.apiBaseUrl.replace(/\/+$/, "")}/chat/completions`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal,
-      headers: {
-        Authorization: `Bearer ${this.config.apiKey}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages,
-        tools,
-        tool_choice: "auto",
-      }),
+    const maxRetries = boundedInteger(this.config.maxRetries, DEFAULT_MAX_RETRIES, 0, 4);
+    const retryBaseDelayMs = boundedInteger(
+      this.config.retryBaseDelayMs,
+      DEFAULT_RETRY_BASE_DELAY_MS,
+      0,
+      MAX_RETRY_DELAY_MS,
+    );
+    const requestBody = JSON.stringify({
+      model: this.config.model,
+      messages,
+      tools,
+      tool_choice: "auto",
     });
+    let rawBody = "";
+    let response: Response | undefined;
 
-    const rawBody = await response.text();
-    const payload = parsePayload(rawBody);
-    if (!response.ok) {
-      const detail = modelErrorMessage(payload) ?? (rawBody.slice(0, 500) || response.statusText);
-      throw new Error(`Model request failed (${response.status}): ${detail}`);
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      response = await fetch(endpoint, {
+        method: "POST",
+        signal,
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: requestBody,
+      });
+      rawBody = await response.text();
+      if (response.ok) {
+        break;
+      }
+
+      const detail = modelErrorDetail(rawBody, response.statusText);
+      if (!RETRYABLE_STATUS_CODES.has(response.status) || attempt >= maxRetries) {
+        throw requestFailure(response.status, detail, attempt);
+      }
+      await waitForRetry(retryDelayMs(response, attempt, retryBaseDelayMs), signal);
     }
 
+    if (!response?.ok) {
+      throw new Error("Model request failed without a response.");
+    }
+
+    const payload = parsePayload(rawBody);
     const choices = payload.choices;
     if (!Array.isArray(choices) || choices.length === 0) {
       throw protocolError("choices must be a non-empty array");
@@ -71,6 +98,76 @@ export class OpenAICompatibleClient implements ModelClient {
       tool_calls: toolCalls,
     };
   }
+}
+
+function boundedInteger(
+  value: number | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  return typeof value === "number" && Number.isInteger(value)
+    ? Math.min(maximum, Math.max(minimum, value))
+    : fallback;
+}
+
+function modelErrorDetail(rawBody: string, statusText: string): string {
+  try {
+    const value: unknown = JSON.parse(rawBody);
+    if (isRecord(value)) {
+      const detail = modelErrorMessage(value);
+      if (detail) {
+        return detail;
+      }
+    }
+  } catch {
+    // Error responses are not required to use the successful response schema.
+  }
+  return rawBody.slice(0, 500) || statusText || "Unknown model service error";
+}
+
+function requestFailure(status: number, detail: string, retries: number): Error {
+  const retryNote = retries > 0 ? `，已自动重试 ${retries} 次` : "";
+  if (status === 401) {
+    return new Error(`模型认证失败 (401)：${detail}。请检查 API Key 与账号绑定状态。`);
+  }
+  if (status === 429) {
+    return new Error(`模型服务限流 (429)${retryNote}：${detail}。请稍后重试或切换模型。`);
+  }
+  return new Error(`Model request failed (${status})${retryNote}: ${detail}`);
+}
+
+function retryDelayMs(response: Response, attempt: number, baseDelayMs: number): number {
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(MAX_RETRY_DELAY_MS, Math.round(seconds * 1_000));
+    }
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.min(MAX_RETRY_DELAY_MS, Math.max(0, retryAt - Date.now()));
+    }
+  }
+  return Math.min(MAX_RETRY_DELAY_MS, baseDelayMs * 2 ** attempt);
+}
+
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("The model request was aborted.", "AbortError"));
+  }
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new DOMException("The model request was aborted.", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -57,11 +57,137 @@ describe("workspace tools", () => {
       executionContext(false),
     );
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("User rejected");
+    const payload = JSON.parse(result.content) as {
+      approved: boolean;
+      approvalDurationMs: number;
+      error: string;
+    };
+    expect(payload).toMatchObject({
+      approved: false,
+      error: "User rejected the command.",
+    });
+    expect(payload.approvalDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("returns successful UTF-8 stdout and stderr without corrupting Chinese text", async () => {
+    const { tools } = await createFixture();
+    const result = await tool(tools, "run_command").execute(
+      {
+        command:
+          'node -e "process.stdout.write(\'\\u4e2d\\u6587\');process.stderr.write(\'\\u8b66\\u544a\')"',
+        reason: "验证 UTF-8 输出",
+      },
+      executionContext(),
+    );
+    const payload = JSON.parse(result.content) as {
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      outputTruncated: boolean;
+      approvalDurationMs: number;
+      executionDurationMs: number;
+    };
+
+    expect(result.isError).not.toBe(true);
+    expect(payload).toMatchObject({
+      exitCode: 0,
+      stdout: "中文",
+      stderr: "警告",
+      outputTruncated: false,
+    });
+    expect(payload.approvalDurationMs).toBeGreaterThanOrEqual(0);
+    expect(payload.executionDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("preserves a non-zero exit code and marks the result as an error", async () => {
+    const { tools } = await createFixture();
+    const result = await tool(tools, "run_command").execute(
+      {
+        command: 'node -e "process.stderr.write(\'failed\');process.exit(7)"',
+        reason: "验证失败状态",
+      },
+      executionContext(),
+    );
+    const payload = JSON.parse(result.content) as { exitCode: number; stderr: string };
+
+    expect(result.isError).toBe(true);
+    expect(payload.exitCode).toBe(7);
+    expect(payload.stderr).toBe("failed");
+  });
+
+  it("times out a command and terminates its descendant process", async () => {
+    const { tools, root } = await createFixture({ commandTimeoutMs: 150 });
+    await writeFile(
+      path.join(root, "child-process.js"),
+      [
+        'const { writeFileSync } = require("node:fs");',
+        'setTimeout(() => writeFileSync("orphan-marker.txt", "alive"), 700);',
+        "setInterval(() => {}, 1_000);",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(root, "parent-process.js"),
+      [
+        'const { spawn } = require("node:child_process");',
+        'const { writeFileSync } = require("node:fs");',
+        'const child = spawn(process.execPath, ["child-process.js"], { cwd: __dirname, stdio: "ignore" });',
+        'writeFileSync("child.pid", String(child.pid));',
+        "setInterval(() => {}, 1_000);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await tool(tools, "run_command").execute(
+      { command: "node parent-process.js", reason: "验证超时清理" },
+      executionContext(),
+    );
+    const payload = JSON.parse(result.content) as { timedOut: boolean };
+    await delay(850);
+
+    try {
+      expect(result.isError).toBe(true);
+      expect(payload.timedOut).toBe(true);
+      expect(await fileExists(path.join(root, "orphan-marker.txt"))).toBe(false);
+    } finally {
+      await stopRecordedChild(path.join(root, "child.pid"));
+    }
+  });
+
+  it("rejects with AbortError when the user cancels a running command", async () => {
+    const { tools } = await createFixture({ commandTimeoutMs: 5_000 });
+    const controller = new AbortController();
+    const running = tool(tools, "run_command").execute(
+      { command: 'node -e "setInterval(() => {}, 1_000)"', reason: "验证取消" },
+      executionContext(true, controller.signal),
+    );
+    setTimeout(() => controller.abort(), 100);
+
+    await expect(running).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("keeps only the configured output tail and reports truncation", async () => {
+    const { tools } = await createFixture({ maxOutputChars: 40 });
+    const result = await tool(tools, "run_command").execute(
+      {
+        command: 'node -e "process.stdout.write(\'x\'.repeat(120))"',
+        reason: "验证输出限制",
+      },
+      executionContext(),
+    );
+    const payload = JSON.parse(result.content) as {
+      stdout: string;
+      outputTruncated: boolean;
+    };
+
+    expect(payload.stdout).toBe("x".repeat(40));
+    expect(payload.outputTruncated).toBe(true);
   });
 });
 
-async function createFixture(): Promise<{ tools: AgentTool[]; tracker: ChangeTracker }> {
+async function createFixture(
+  options: { commandTimeoutMs?: number; maxOutputChars?: number } = {},
+): Promise<{ tools: AgentTool[]; tracker: ChangeTracker; root: string }> {
   const root = await mkdtemp(path.join(tmpdir(), "localforge-tools-"));
   temporaryRoots.push(root);
   await mkdir(path.join(root, "src"));
@@ -71,10 +197,10 @@ async function createFixture(): Promise<{ tools: AgentTool[]; tracker: ChangeTra
   const tools = await createWorkspaceTools({
     rootPath: root,
     changeTracker: tracker,
-    commandTimeoutMs: 2_000,
-    maxOutputChars: 5_000,
+    commandTimeoutMs: options.commandTimeoutMs ?? 2_000,
+    maxOutputChars: options.maxOutputChars ?? 5_000,
   });
-  return { tools, tracker };
+  return { tools, tracker, root };
 }
 
 function tool(tools: readonly AgentTool[], name: string): AgentTool {
@@ -85,10 +211,36 @@ function tool(tools: readonly AgentTool[], name: string): AgentTool {
   return found;
 }
 
-function executionContext(approved = true): ToolExecutionContext {
+function executionContext(
+  approved = true,
+  signal: AbortSignal = new AbortController().signal,
+): ToolExecutionContext {
   return {
-    signal: new AbortController().signal,
+    signal,
     requestCommandApproval: async () => approved,
   };
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stopRecordedChild(pidFile: string): Promise<void> {
+  try {
+    const pid = Number.parseInt(await readFile(pidFile, "utf8"), 10);
+    if (Number.isInteger(pid)) {
+      process.kill(pid);
+    }
+  } catch {
+    // The expected path: the command tree was already terminated.
+  }
+}
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
