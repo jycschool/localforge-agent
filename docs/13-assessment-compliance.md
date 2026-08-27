@@ -7,7 +7,7 @@
 | 个人独立设计并实现 coding agent | 独立 Electron 应用；AgentLoop、ModelClient、ToolRegistry、WorkspaceTools 均在仓库 | 已覆盖 | 面试说明每层职责与取舍 |
 | 能自主读写文件、执行命令、完成编程任务 | 六个本地工具、模型循环、审批、Diff、三轮真实修改闭环 | 三轮均由 2/6 修复至 6/6，另有一次远端限流如实失败 | 选定最终视频使用的成功轮次并计时 |
 | 不封装现成 Agent 产品 | 不依赖 VS Code/Codex/Copilot/Claude Code | 已覆盖 | 视频首句说明 Electron 仅为 UI |
-| 不使用 Agent 框架/SDK | `package.json` 无题目列举框架；循环自行实现 | 已覆盖 | 发布前再次检查依赖清单 |
+| 不使用 Agent 框架/SDK | 根依赖清单只有 Electron、esbuild、TypeScript、Vitest 和 Node 类型，0 个生产依赖；循环自行实现 | 已覆盖并复核 | 最终提交前再次运行依赖清单检查 |
 | 不依赖服务端代码执行/文件工具 | 模型服务只接收消息与 schema；文件和进程均由本地工具完成 | 已覆盖 | 视频展示本地 cwd 和真实 Diff |
 | 对话历史与上下文管理自行实现 | AgentLoop 消息数组、system prompt、Skill、Memory、历史存储 | 已覆盖且真实验证 | 连续彩排确认稳定性 |
 | 工具定义与本地执行自行实现 | Tool schema、ToolRegistry、路径解析、文件工具、进程树清理 | 已覆盖 | 保留命令测试证据 |
