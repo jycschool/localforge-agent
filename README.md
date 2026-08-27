@@ -2,6 +2,8 @@
 
 LocalForge 是一个面向 Visual Studio Code 的本地编程智能体。它在编辑器侧边栏中接收任务，读取和修改当前工作区代码、执行本地命令与测试，并把过程和变更以可审查的方式呈现给用户。
 
+公开仓库：https://github.com/jycschool/localforge-agent
+
 项目不会调用或封装现有 coding agent，也不依赖 agent 框架。模型交互循环、上下文管理、工具协议、本地执行、停止条件和错误处理均在本仓库内实现。
 
 ## 当前阶段
