@@ -16,6 +16,8 @@ LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用
 - 展示模型回合、工具结果、运行输出、变更文件及任务前后双栏 Diff。
 - 从项目 `.localforge/skills/*.md` 发现可选 Skill，并在运行时注入选中的工作方法。
 - 提供按项目隔离的 Memory；长期约定保存在 LocalForge 本地数据中，不污染 Git 仓库。
+- 提供按项目隔离的任务历史；可回看状态、步骤、过程和改动文件，异常退出的任务会标记为意外中断。
+- 严格校验模型响应与 tool call 协议，损坏调用会明确失败，不会被误判为任务完成。
 - 大目录按展开状态延迟渲染，并限制界面中的历史输出，避免长任务拖慢前端。
 - API Key 使用操作系统安全存储加密，也可通过 `LOCALFORGE_API_KEY` 提供。
 - 内置 ModelScope 的 Qwen3 Coder 30B 免费推理预设；模型针对代码 Agent 和工具调用，免费额度适合课程演示。
@@ -41,13 +43,13 @@ ModelScope 免费 API 需要账号绑定已实名认证的阿里云账号，当�
 src/
   agent/       Agent 循环、工具注册与变更跟踪
   core/        模型消息和工具协议
-  desktop/     桌面 IPC、配置与项目读取服务
+  desktop/     桌面 IPC、配置、项目读取与任务历史服务
   model/       OpenAI-compatible 模型客户端
   renderer/    项目树、代码预览、时间线和审批界面
   tools/       受工作区边界保护的本地工具
   main.ts      Electron 主进程与任务编排
   preload.ts   最小权限的安全桥接
-tests/         Agent、工具、路径和桌面项目服务测试
+tests/         Agent、模型协议、历史、工具、路径和桌面服务测试
 docs/          软件生命周期文档、ADR 与界面原型
 .localforge/skills/  项目可共享的 Skill Markdown（按需创建）
 ```

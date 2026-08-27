@@ -14,7 +14,9 @@
 - 桌面项目服务：生成目录过滤、UTF-8 读取、语言识别和越界拒绝。
 - ChangeTracker：首次快照、重复修改和排序。
 - ModelClient：认证错误、限流、无效 JSON 和缺失消息。
+- ModelClient 协议：分段文本、空 choices、损坏/重复 tool call 和非对象参数。
 - ProjectContextStore：Skill 类型/大小限制、选中项过滤、Memory 更新、长度和项目隔离。
+- RunHistoryStore：项目隔离、运行中/意外中断映射、完成详情、敏感 reasoning 移除和非法 ID。
 - SystemPrompt：Memory 过期提示、Skill 内容和不可覆盖的安全边界。
 
 ### 2.2 临时工作区集成测试
@@ -65,10 +67,12 @@
 | T-15 | 选择 Skill | 仅选中且运行时仍存在的 Markdown 内容进入上下文 |
 | T-16 | 保存 Memory | 同一项目可更新，不同项目互不读取，项目目录不产生文件 |
 | T-17 | 长时间线/输出 | 旧界面节点和字符被有提示地淘汰，输入与滚动保持流畅 |
+| T-18 | 任务历史持久化 | 重启后可按项目读取；运行中遗留记录显示为意外中断；不保存 reasoning 和 Key |
+| T-19 | 损坏模型协议 | 无效 JSON、空 choices、坏调用、重复 ID 和非对象参数均明确失败 |
 
 ## 4. 当前自动化证据
 
-截至 2026-08-27，`pnpm test` 共 8 个测试文件、25 项测试通过，覆盖 Agent 生命周期、工作区工具、命令拒绝、路径边界、桌面项目服务、Skill/Memory 与上下文提示。`pnpm run check` 与 `pnpm run build` 同时通过。命令超时、真实模型、完整桌面 IPC 和前端长任务性能仍列为后续测试，不以现有单元测试替代。
+截至 2026-08-27，`pnpm test` 共 9 个测试文件、34 项测试通过，覆盖 Agent 生命周期、工作区工具、命令拒绝、路径边界、桌面项目服务、Skill/Memory、任务历史、严格模型协议与上下文提示。`pnpm run check` 与 `pnpm run build` 同时通过。命令超时、真实模型、完整桌面 IPC 和前端长任务性能仍列为后续测试，不以现有单元测试替代。
 
 ## 5. 发布门禁
 

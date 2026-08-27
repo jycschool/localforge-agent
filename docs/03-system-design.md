@@ -24,8 +24,10 @@ flowchart LR
     C --> S[ConfigStore / safeStorage]
     C --> D[ChangeTracker / Diff]
     C --> K[ProjectContextStore]
+    C --> H[RunHistoryStore]
     K --> SK[.localforge/skills/*.md]
     K --> MM[(本机项目 Memory)]
+    H --> RH[(本机任务历史)]
 ```
 
 ## 3. 进程与模块职责
@@ -38,9 +40,10 @@ flowchart LR
 | `desktop/projectService.ts` | 过滤项目树、限制文件预览、真实路径检查 | 修改文件 |
 | `desktop/configStore.ts` | 配置验证、系统加密存储、环境变量覆盖 | 向 Renderer 暴露 Key 明文 |
 | `desktop/projectContextStore.ts` | Skill 发现、Memory 隔离存储、上下文限制 | 自动执行 Skill 或修改项目文件 |
+| `desktop/runHistoryStore.ts` | 按项目记录任务状态、事件、消息摘要和改动文件 | 保存 API Key 或写入用户项目 |
 | `agent/systemPrompt.ts` | 合并固定安全提示、Memory 和选中 Skill | 信任过期记忆代替读取代码 |
 | `agent/agentLoop.ts` | 消息历史、工具调度、循环、取消、终止和事件 | 具体工具实现 |
-| `model/openAICompatibleClient.ts` | HTTP、响应解析和 tool call 规范化 | 自动执行工具 |
+| `model/openAICompatibleClient.ts` | HTTP、严格响应解析和 tool call 协议校验 | 自动执行工具 |
 | `agent/toolRegistry.ts` | 工具 schema、调用和统一错误结果 | UI 渲染 |
 | `tools/workspaceTools.ts` | 列表、搜索、读取、修改、命令和边界保护 | Git 提交与推送 |
 | `agent/changeTracker.ts` | 首次写入前快照和变更集合 | 撤销与版本控制 |
@@ -64,7 +67,7 @@ fail safely when the step limit is exhausted
 
 - 普通模型文本不能改变工作区；只有注册工具能产生本地副作用。
 - 工具调用和结果严格按 `tool_call_id` 配对。
-- 参数或工具错误被规范化并反馈模型，不破坏消息序列。
+- 已进入循环的参数或工具错误被规范化并反馈模型，不破坏消息序列；模型响应本身结构损坏时明确失败。
 - AbortSignal 同时控制模型请求、AgentLoop 和本地进程。
 
 ## 5. 状态机
@@ -117,6 +120,8 @@ stateDiagram-v2
 
 Memory 是用户维护的轻量文本，最多 12,000 字符。`ProjectContextStore` 使用项目真实路径的 SHA-256 摘要作为存储键，文件位于 Electron `userData/project-memory`，因此不会污染项目仓库。Memory 每次任务自动注入，并明确标记“可能过期，应以当前文件核实”。首版不做向量检索、自动记忆或模型自主改写，避免形成不可观察的隐式状态。
 
+`RunHistoryStore` 使用相同的真实路径摘要隔离项目，文件位于 Electron `userData/run-history`。任务启动时先写入 `running` 记录，结束后原子更新为 `completed`、`cancelled` 或 `failed`；应用重启后遗留的 `running` 记录在读取时映射为 `interrupted`。每个项目最多保留 50 次任务、每次最多 200 条事件和 160 条消息；私有 reasoning 字段被移除，API Key 从未进入历史对象。Renderer 只通过白名单 IPC 读取列表与详情。
+
 ChangeTracker 在任务中对每个文件只捕获一次原始内容。任务结束后主进程读取当前内容，Renderer 提供双栏只读对比。首版不自动提交、推送或撤销，避免扩大 Agent 权限。
 
 ## 9. 错误处理
@@ -124,7 +129,8 @@ ChangeTracker 在任务中对每个文件只捕获一次原始内容。任务结
 | 错误 | 处理 |
 | --- | --- |
 | 模型认证、限流或无效响应 | 当前任务失败，保留时间线和已有变更 |
-| tool call JSON 无效 | 形成工具错误结果，允许模型后续修正 |
+| 模型响应 JSON、choices 或 tool call 结构无效 | 产生明确协议错误并终止当前任务，不显示虚假完成 |
+| 已进入循环的工具参数或工具执行无效 | 形成结构化工具错误结果，允许模型后续修正 |
 | 路径越界或符号链接逃逸 | 拒绝操作并返回明确错误 |
 | 含糊文本替换 | 不写入，要求重新读取或缩小目标 |
 | 用户拒绝命令 | 不创建进程，将拒绝作为工具结果返回 |
@@ -132,6 +138,7 @@ ChangeTracker 在任务中对每个文件只捕获一次原始内容。任务结
 | 文件过多/过大 | 目录树最多 2,000 文件，预览文件最多 1 MB |
 | Skill 缺失/过大 | 重新扫描后忽略，未勾选内容不进入上下文 |
 | Memory 过长/损坏 | 拒绝保存或明确提示本地数据读取失败 |
+| 任务运行中应用退出 | 下次打开历史时标记为“意外中断”，保留开始记录 |
 
 ## 10. 可扩展点
 
