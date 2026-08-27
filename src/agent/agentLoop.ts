@@ -61,7 +61,30 @@ export class AgentLoop {
         for (const call of calls) {
           throwIfAborted(options.signal);
           const startedAt = Date.now();
-          const argumentsValue = parseArguments(call.function.arguments);
+          let argumentsValue: Record<string, unknown>;
+          try {
+            argumentsValue = parseArguments(call.function.arguments);
+          } catch (error) {
+            const result = {
+              content: JSON.stringify({ error: errorMessage(error) }),
+              isError: true,
+            };
+            options.onEvent({
+              type: "tool_started",
+              id: call.id,
+              name: call.function.name,
+              arguments: {},
+            });
+            messages.push({ role: "tool", tool_call_id: call.id, content: result.content });
+            options.onEvent({
+              type: "tool_finished",
+              id: call.id,
+              name: call.function.name,
+              result,
+              durationMs: Date.now() - startedAt,
+            });
+            continue;
+          }
           options.onEvent({
             type: "tool_started",
             id: call.id,
@@ -139,4 +162,3 @@ function errorMessage(error: unknown): string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

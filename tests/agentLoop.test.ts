@@ -117,6 +117,32 @@ describe("AgentLoop", () => {
     expect(result.status).toBe("cancelled");
     expect(events.at(-1)?.type).toBe("run_cancelled");
   });
+
+  it("returns malformed tool arguments to the model as a tool error", async () => {
+    const model = new ScriptedModel([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "bad-call",
+            type: "function",
+            function: { name: "echo", arguments: "{not-json" },
+          },
+        ],
+      },
+      { role: "assistant", content: "Recovered from the invalid call." },
+    ]);
+    const loop = new AgentLoop(model, new ToolRegistry([echoTool]));
+    const events: AgentEvent[] = [];
+    const result = await loop.run(defaultOptions(events));
+
+    expect(result.status).toBe("completed");
+    const toolMessage = result.messages.find(
+      (message) => message.role === "tool" && message.tool_call_id === "bad-call",
+    );
+    expect(toolMessage?.content).toContain("not valid JSON");
+  });
 });
 
 function defaultOptions(events: AgentEvent[]) {
@@ -129,4 +155,3 @@ function defaultOptions(events: AgentEvent[]) {
     requestCommandApproval: vi.fn(async () => true),
   };
 }
-

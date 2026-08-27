@@ -1,12 +1,15 @@
 import * as vscode from "vscode";
+import { DiffContentProvider } from "./panel/diffContentProvider";
 import { LocalForgeViewProvider } from "./panel/localForgeView";
 
 const API_KEY_SECRET = "localForge.apiKey";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new LocalForgeViewProvider(context.extensionUri);
+  const diffProvider = new DiffContentProvider();
+  const provider = new LocalForgeViewProvider(context, diffProvider, API_KEY_SECRET);
 
   context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider("localforge-original", diffProvider),
     vscode.window.registerWebviewViewProvider(
       LocalForgeViewProvider.viewType,
       provider,
@@ -29,4 +32,3 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
-

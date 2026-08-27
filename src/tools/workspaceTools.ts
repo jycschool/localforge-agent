@@ -59,6 +59,17 @@ class WorkspacePathResolver {
 
   public async writable(relativePath: string): Promise<{ absolutePath: string; relativePath: string }> {
     const candidate = this.lexical(relativePath);
+    try {
+      const candidateRealPath = await realpath(candidate.absolutePath);
+      if (!isPathInside(this.rootRealPath, candidateRealPath)) {
+        throw new Error(`Path resolves outside the workspace: ${relativePath}`);
+      }
+      return { absolutePath: candidateRealPath, relativePath: candidate.relativePath };
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+    }
     const parent = await nearestExistingParent(path.dirname(candidate.absolutePath));
     const parentRealPath = await realpath(parent);
     if (!isPathInside(this.rootRealPath, parentRealPath)) {
@@ -432,10 +443,18 @@ async function walkFiles(
 
 function globMatcher(pattern: string): (relativePath: string) => boolean {
   const normalized = normalizeRelative(pattern.trim() || "**/*");
+  const regexes = [compileGlob(normalized)];
+  if (normalized.startsWith("**/")) {
+    regexes.push(compileGlob(normalized.slice(3)));
+  }
+  return (relativePath) => regexes.some((regex) => regex.test(normalizeRelative(relativePath)));
+}
+
+function compileGlob(pattern: string): RegExp {
   let regexSource = "";
-  for (let index = 0; index < normalized.length; index += 1) {
-    const character = normalized[index] ?? "";
-    const next = normalized[index + 1];
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index] ?? "";
+    const next = pattern[index + 1];
     if (character === "*" && next === "*") {
       regexSource += ".*";
       index += 1;
@@ -447,8 +466,7 @@ function globMatcher(pattern: string): (relativePath: string) => boolean {
       regexSource += character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
   }
-  const regex = new RegExp(`^${regexSource}$`, process.platform === "win32" ? "i" : "");
-  return (relativePath) => regex.test(normalizeRelative(relativePath));
+  return new RegExp(`^${regexSource}$`, process.platform === "win32" ? "i" : "");
 }
 
 async function nearestExistingParent(startPath: string): Promise<string> {
@@ -531,4 +549,3 @@ function normalizeRelative(value: string): string {
 function isMissingFileError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
-
