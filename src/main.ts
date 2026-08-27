@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { AgentLoop } from "./agent/agentLoop";
@@ -21,6 +21,7 @@ let projectRoot: string | null = null;
 let activeController: AbortController | null = null;
 const changeTracker = new ChangeTracker();
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
+const MODELSCOPE_TOKEN_URL = "https://modelscope.cn/my/myaccesstoken";
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -87,6 +88,9 @@ function registerIpc(configStore: ConfigStore): void {
   ipcMain.handle(IPC_CHANNELS.saveSettings, (_event, input: SettingsInput) =>
     configStore.save(input),
   );
+  ipcMain.handle(IPC_CHANNELS.openModelScopeTokenPage, async () => {
+    await shell.openExternal(MODELSCOPE_TOKEN_URL);
+  });
 
   ipcMain.handle(IPC_CHANNELS.startRun, async (_event, request: RunRequest) => {
     const rootPath = requireProject();

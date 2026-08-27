@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   readFile: "project:read-file",
   getSettings: "settings:get",
   saveSettings: "settings:save",
+  openModelScopeTokenPage: "app:open-modelscope-token-page",
   startRun: "agent:start",
   stopRun: "agent:stop",
   getChanges: "agent:get-changes",
@@ -75,6 +76,7 @@ export interface DesktopApi {
   readFile(relativePath: string): Promise<FileSnapshot>;
   getSettings(): Promise<PublicSettings>;
   saveSettings(input: SettingsInput): Promise<PublicSettings>;
+  openModelScopeTokenPage(): Promise<void>;
   startRun(request: RunRequest): Promise<RunStartResult>;
   stopRun(): Promise<boolean>;
   getChanges(): Promise<ChangedFileSnapshot[]>;

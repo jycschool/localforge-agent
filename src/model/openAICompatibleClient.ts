@@ -16,6 +16,7 @@ interface ChatCompletionPayload {
     message?: {
       role?: string;
       content?: unknown;
+      reasoning_content?: unknown;
       tool_calls?: unknown;
     };
   }>;
@@ -62,9 +63,14 @@ export class OpenAICompatibleClient implements ModelClient {
     return {
       role: "assistant",
       content: normalizeContent(message.content),
+      reasoning_content: normalizeOptionalString(message.reasoning_content),
       tool_calls: normalizeToolCalls(message.tool_calls),
     };
   }
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function parsePayload(rawBody: string): ChatCompletionPayload {

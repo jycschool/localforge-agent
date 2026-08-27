@@ -10,11 +10,12 @@ interface StoredSettings {
   commandTimeoutMs: number;
   maxOutputChars: number;
   encryptedApiKey?: string;
+  apiKeyBaseUrl?: string;
 }
 
 const DEFAULTS: StoredSettings = {
-  apiBaseUrl: "https://api.openai.com/v1",
-  model: "gpt-5.1-codex",
+  apiBaseUrl: "https://api-inference.modelscope.cn/v1",
+  model: "deepseek-ai/DeepSeek-V4-Pro",
   maxSteps: 12,
   commandTimeoutMs: 120_000,
   maxOutputChars: 20_000,
@@ -26,16 +27,19 @@ export class ConfigStore {
   public async publicSettings(): Promise<PublicSettings> {
     const stored = await this.read();
     const environmentKey = process.env.LOCALFORGE_API_KEY?.trim();
+    const hasSavedKey = Boolean(
+      stored.encryptedApiKey && stored.apiKeyBaseUrl === stored.apiBaseUrl,
+    );
     return {
       apiBaseUrl: stored.apiBaseUrl,
       model: stored.model,
       maxSteps: stored.maxSteps,
       commandTimeoutMs: stored.commandTimeoutMs,
       maxOutputChars: stored.maxOutputChars,
-      hasApiKey: Boolean(environmentKey || stored.encryptedApiKey),
+      hasApiKey: Boolean(environmentKey || hasSavedKey),
       apiKeySource: environmentKey
         ? "environment"
-        : stored.encryptedApiKey
+        : hasSavedKey
           ? "saved"
           : "missing",
     };
@@ -47,7 +51,7 @@ export class ConfigStore {
       return environmentKey;
     }
     const stored = await this.read();
-    if (!stored.encryptedApiKey) {
+    if (!stored.encryptedApiKey || stored.apiKeyBaseUrl !== stored.apiBaseUrl) {
       return null;
     }
     if (!safeStorage.isEncryptionAvailable()) {
@@ -70,6 +74,7 @@ export class ConfigStore {
       commandTimeoutMs: boundedInteger(input.commandTimeoutMs, 1_000, 600_000, "命令超时"),
       maxOutputChars: boundedInteger(input.maxOutputChars, 1_000, 200_000, "输出上限"),
       encryptedApiKey: current.encryptedApiKey,
+      apiKeyBaseUrl: current.apiKeyBaseUrl,
     };
     const newKey = input.apiKey?.trim();
     if (newKey) {
@@ -77,6 +82,7 @@ export class ConfigStore {
         throw new Error("当前系统不支持安全保存 API Key；请使用 LOCALFORGE_API_KEY 环境变量。");
       }
       next.encryptedApiKey = safeStorage.encryptString(newKey).toString("base64");
+      next.apiKeyBaseUrl = apiBaseUrl;
     }
     await mkdir(path.dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
@@ -86,14 +92,24 @@ export class ConfigStore {
   private async read(): Promise<StoredSettings> {
     try {
       const raw = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<StoredSettings>;
+      const apiBaseUrl =
+        typeof raw.apiBaseUrl === "string"
+          ? validateApiBaseUrl(raw.apiBaseUrl)
+          : DEFAULTS.apiBaseUrl;
       return {
-        apiBaseUrl: typeof raw.apiBaseUrl === "string" ? raw.apiBaseUrl : DEFAULTS.apiBaseUrl,
+        apiBaseUrl,
         model: typeof raw.model === "string" ? raw.model : DEFAULTS.model,
         maxSteps: integerOr(raw.maxSteps, DEFAULTS.maxSteps),
         commandTimeoutMs: integerOr(raw.commandTimeoutMs, DEFAULTS.commandTimeoutMs),
         maxOutputChars: integerOr(raw.maxOutputChars, DEFAULTS.maxOutputChars),
         encryptedApiKey:
           typeof raw.encryptedApiKey === "string" ? raw.encryptedApiKey : undefined,
+        apiKeyBaseUrl:
+          typeof raw.apiKeyBaseUrl === "string"
+            ? validateApiBaseUrl(raw.apiKeyBaseUrl)
+            : typeof raw.encryptedApiKey === "string"
+              ? apiBaseUrl
+              : undefined,
       };
     } catch (error) {
       if (isMissingFileError(error) || error instanceof SyntaxError) {

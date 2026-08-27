@@ -13,6 +13,7 @@ export type ChatMessage =
   | {
       role: "assistant";
       content: string | null;
+      reasoning_content?: string;
       tool_calls?: FunctionToolCall[];
     }
   | { role: "tool"; tool_call_id: string; content: string };
@@ -68,4 +69,3 @@ export type AgentEvent =
   | { type: "run_completed"; summary: string; steps: number }
   | { type: "run_cancelled"; steps: number }
   | { type: "run_failed"; message: string; steps: number };
-

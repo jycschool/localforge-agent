@@ -60,6 +60,8 @@ const apiBaseUrlInput = element<HTMLInputElement>("api-base-url");
 const modelNameInput = element<HTMLInputElement>("model-name");
 const apiKeyInput = element<HTMLInputElement>("api-key");
 const apiKeyHelp = element<HTMLElement>("api-key-help");
+const useModelScopePresetButton = element<HTMLButtonElement>("use-modelscope-preset");
+const openModelScopeTokenButton = element<HTMLButtonElement>("open-modelscope-token");
 const maxStepsInput = element<HTMLInputElement>("max-steps");
 const commandTimeoutInput = element<HTMLInputElement>("command-timeout");
 const settingsError = element<HTMLElement>("settings-error");
@@ -84,6 +86,8 @@ settingsButton.addEventListener("click", () => void openSettings());
 stopRunButton.addEventListener("click", () => void stopRun());
 taskForm.addEventListener("submit", (event) => void startRun(event));
 settingsForm.addEventListener("submit", (event) => void saveSettings(event));
+useModelScopePresetButton.addEventListener("click", useModelScopePreset);
+openModelScopeTokenButton.addEventListener("click", () => void api.openModelScopeTokenPage());
 approveCommandButton.addEventListener("click", (event) => void answerApproval(event, true));
 rejectCommandButton.addEventListener("click", (event) => void answerApproval(event, false));
 approvalDialog.addEventListener("close", () => {
@@ -373,6 +377,15 @@ async function openSettings(): Promise<void> {
   } catch (error) {
     notify(errorMessage(error));
   }
+}
+
+function useModelScopePreset(): void {
+  apiBaseUrlInput.value = "https://api-inference.modelscope.cn/v1";
+  modelNameInput.value = "deepseek-ai/DeepSeek-V4-Pro";
+  apiKeyInput.value = "";
+  apiKeyHelp.textContent =
+    "请粘贴 ModelScope Token。切换服务不会把其他平台保存的 Key 发送给 ModelScope。";
+  apiKeyInput.focus();
 }
 
 async function saveSettings(event: SubmitEvent): Promise<void> {

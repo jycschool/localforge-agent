@@ -145,6 +145,16 @@
           </div>
           <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
         </header>
+        <section class="provider-preset" aria-label="推荐模型服务">
+          <div>
+            <span class="preset-badge">免费体验</span>
+            <strong>ModelScope · DeepSeek V4 Pro</strong>
+            <small>官方免费推理额度，支持 Agent 工具调用，需要 ModelScope Token。</small>
+          </div>
+          <button id="use-modelscope-preset" class="button button-secondary" type="button">
+            使用
+          </button>
+        </section>
         <label>
           API 地址
           <input id="api-base-url" type="url" required />
@@ -154,10 +164,13 @@
           <input id="model-name" type="text" required />
         </label>
         <label>
-          API Key
-          <input id="api-key" type="password" placeholder="留空表示保留已保存的 Key" />
+          ModelScope Token / API Key
+          <input id="api-key" type="password" placeholder="切换服务后请填写对应的 Token 或 Key" />
           <small id="api-key-help"></small>
         </label>
+        <button id="open-modelscope-token" class="token-link" type="button">
+          获取免费的 ModelScope Token ↗
+        </button>
         <div class="settings-grid">
           <label>
             最大步骤

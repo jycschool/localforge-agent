@@ -19,6 +19,7 @@ const api: DesktopApi = {
   readFile: (relativePath) => ipcRenderer.invoke(IPC_CHANNELS.readFile, relativePath),
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.getSettings),
   saveSettings: (input: SettingsInput) => ipcRenderer.invoke(IPC_CHANNELS.saveSettings, input),
+  openModelScopeTokenPage: () => ipcRenderer.invoke(IPC_CHANNELS.openModelScopeTokenPage),
   startRun: (request) => ipcRenderer.invoke(IPC_CHANNELS.startRun, request),
   stopRun: () => ipcRenderer.invoke(IPC_CHANNELS.stopRun),
   getChanges: () => ipcRenderer.invoke(IPC_CHANNELS.getChanges),
