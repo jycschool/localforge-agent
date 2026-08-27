@@ -15,7 +15,7 @@ LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用
 - 支持命令超时、输出截断、任务取消和最大步骤限制。
 - 展示模型回合、工具结果、运行输出、变更文件及任务前后双栏 Diff。
 - API Key 使用操作系统安全存储加密，也可通过 `LOCALFORGE_API_KEY` 提供。
-- 内置 ModelScope 的 DeepSeek V4 Pro 免费推理预设；免费额度适合课程演示，实际额度以平台实时规则为准。
+- 内置 ModelScope 的 Qwen3 Coder 30B 免费推理预设；模型针对代码 Agent 和工具调用，免费额度适合课程演示。
 
 ## 本地运行
 
@@ -28,7 +28,7 @@ pnpm test
 pnpm start
 ```
 
-启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · DeepSeek V4 Pro` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址、模型名称和 API Key。然后在右侧输入任务。也可以先执行 `pnpm build`，只生成桌面程序的开发构建。
+启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址、模型名称和 API Key。然后在右侧输入任务。也可以先执行 `pnpm build`，只生成桌面程序的开发构建。
 
 ModelScope 免费 API 需要账号绑定已实名认证的阿里云账号，当前通常为每天 2,000 次总调用、单模型最多 200 次，大模型可能另有限额且会动态调整。Token 只保存在操作系统安全存储中；切换 API 服务时，LocalForge 不会把原服务的 Key 发送到新地址。
 

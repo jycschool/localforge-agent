@@ -381,7 +381,7 @@ async function openSettings(): Promise<void> {
 
 function useModelScopePreset(): void {
   apiBaseUrlInput.value = "https://api-inference.modelscope.cn/v1";
-  modelNameInput.value = "deepseek-ai/DeepSeek-V4-Pro";
+  modelNameInput.value = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
   apiKeyInput.value = "";
   apiKeyHelp.textContent =
     "请粘贴 ModelScope Token。切换服务不会把其他平台保存的 Key 发送给 ModelScope。";

@@ -15,7 +15,7 @@ interface StoredSettings {
 
 const DEFAULTS: StoredSettings = {
   apiBaseUrl: "https://api-inference.modelscope.cn/v1",
-  model: "deepseek-ai/DeepSeek-V4-Pro",
+  model: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
   maxSteps: 12,
   commandTimeoutMs: 120_000,
   maxOutputChars: 20_000,
