@@ -12,6 +12,7 @@
 | [06-test-plan.md](06-test-plan.md) | 单元、集成、端到端和人工验收计划 | 基线版 |
 | [07-risk-and-quality.md](07-risk-and-quality.md) | 风险、质量门禁、安全与提交合规 | 基线版 |
 | [08-traceability.md](08-traceability.md) | 需求、模块、测试和演示之间的追踪关系 | 基线版 |
+| [09-development-log.md](09-development-log.md) | 每日进展、验证证据和计划偏差 | 持续更新 |
 | [decisions/0001-vscode-extension.md](decisions/0001-vscode-extension.md) | 采用 VS Code 扩展形态的决策记录 | 已接受 |
 
 ## 文档维护规则
@@ -20,4 +21,3 @@
 - 架构级取舍使用 ADR 记录，不直接覆盖原有结论。
 - 每日收尾时更新计划中的实际进展、偏差和次日重点。
 - 发布前检查所有“待定”项、占位符和演示依赖。
-

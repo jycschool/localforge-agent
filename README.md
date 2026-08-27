@@ -7,8 +7,31 @@ LocalForge 是一个面向 Visual Studio Code 的本地编程智能体。它在�
 ## 当前阶段
 
 - 已完成需求、用例、总体设计、界面原型、测试计划和风险分析。
-- 正在搭建 VS Code 扩展及最小可运行 agent 闭环。
+- 已搭建 VS Code 扩展，并实现最小 agent 循环、本地文件工具、命令审批、停止与 Diff 入口。
 - 计划于 2026 年 9 月 2 日前完成演示版本、视频和提交材料。
+
+## 本地开发
+
+要求：Node.js 20 或更高版本、pnpm、VS Code 1.95 或更高版本。
+
+```powershell
+pnpm install
+pnpm run check
+pnpm test
+pnpm run build
+```
+
+在 VS Code 中打开本仓库，按 `F5` 启动 Extension Development Host。随后打开 LocalForge 侧边栏，通过 `LocalForge: Set API Key` 保存密钥，并在设置中确认 API Base URL 和模型名称。
+
+当前模型层使用 OpenAI-compatible `/chat/completions` 与原生 tool calling，不依赖 agent SDK。
+
+## 已实现的最小闭环
+
+- 自动携带活动文件和选中代码。
+- 文件列表、文本搜索、带行号读取、精确替换和写文件。
+- 本地命令逐次确认、超时、输出截断和取消。
+- 模型输出与工具结果循环、最大步骤限制和错误回传。
+- 运行时间线、停止按钮、变更文件列表和任务前后 Diff。
 
 ## 文档
 
@@ -24,4 +47,3 @@ LocalForge 是一个面向 Visual Studio Code 的本地编程智能体。它在�
 2. 所有代码执行和文件操作均发生在用户选定的本地工作区。
 3. 默认可观察、可停止、可审查，不把模型输出直接等同于成功。
 4. API 凭据只通过环境变量或 VS Code SecretStorage 保存。
-
