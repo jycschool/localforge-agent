@@ -10,6 +10,7 @@ import type {
   RunHistorySummary,
 } from "../desktop/contracts";
 import { fileVisualFor } from "./fileIcons";
+import { displayLocalPath } from "./pathDisplay";
 import { compactMarkdownText, parseSafeMarkdown, type InlineToken } from "./safeMarkdown";
 
 declare global {
@@ -208,7 +209,7 @@ function renderProject(): void {
     return;
   }
   projectName.textContent = project.name;
-  projectPath.textContent = project.rootPath;
+  projectPath.textContent = displayLocalPath(project.rootPath);
   const previousScrollTop = fileTree.scrollTop;
   fileTree.replaceChildren();
   const root: TreeNode = {
@@ -726,7 +727,7 @@ function showApproval(request: CommandApprovalRequest): void {
   approvalAnswered = false;
   approvalReason.textContent = request.reason;
   approvalCommand.textContent = request.command;
-  approvalCwd.textContent = `运行目录：${request.cwd}`;
+  approvalCwd.textContent = `运行目录：${displayLocalPath(request.cwd)}`;
   appendTimeline("等待命令批准", request.command, "active");
   approvalDialog.showModal();
 }
