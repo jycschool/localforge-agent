@@ -2,6 +2,7 @@ import type { AgentEvent, CommandApprovalRequest } from "../core/protocol";
 import type {
   ChangedFileSnapshot,
   DesktopApi,
+  ProjectContextSnapshot,
   ProjectSnapshot,
   PublicSettings,
 } from "../desktop/contracts";
@@ -26,6 +27,13 @@ let selectedFile: string | null = null;
 let changes: ChangedFileSnapshot[] = [];
 let currentSettings: PublicSettings | null = null;
 let activeApproval: CommandApprovalRequest | null = null;
+let projectContext: ProjectContextSnapshot = {
+  skills: [],
+  memory: "",
+  maxMemoryChars: 12_000,
+  maxSelectedSkills: 8,
+};
+const selectedSkillIds = new Set<string>();
 let approvalAnswered = false;
 let toastTimer: number | undefined;
 let treeInitialized = false;
@@ -52,6 +60,20 @@ const taskForm = element<HTMLFormElement>("task-form");
 const taskInput = element<HTMLTextAreaElement>("task-input");
 const startRunButton = element<HTMLButtonElement>("start-run");
 const selectedContext = element<HTMLElement>("selected-context");
+const skillsButton = element<HTMLButtonElement>("skills-button");
+const skillsBadge = element<HTMLElement>("skills-badge");
+const memoryButton = element<HTMLButtonElement>("memory-button");
+const memoryBadge = element<HTMLElement>("memory-badge");
+const skillsDialog = element<HTMLDialogElement>("skills-dialog");
+const skillList = element<HTMLElement>("skill-list");
+const refreshSkillsButton = element<HTMLButtonElement>("refresh-skills");
+const memoryDialog = element<HTMLDialogElement>("memory-dialog");
+const memoryForm = element<HTMLFormElement>("memory-form");
+const memoryInput = element<HTMLTextAreaElement>("memory-input");
+const memoryCharacterCount = element<HTMLElement>("memory-character-count");
+const memoryError = element<HTMLElement>("memory-error");
+const closeMemoryButton = element<HTMLButtonElement>("close-memory");
+const cancelMemoryButton = element<HTMLButtonElement>("cancel-memory");
 const settingsButton = element<HTMLButtonElement>("settings-button");
 const modelStatus = element<HTMLElement>("model-status");
 const settingsDialog = element<HTMLDialogElement>("settings-dialog");
@@ -85,6 +107,13 @@ clearOutputButton.addEventListener("click", () => {
 settingsButton.addEventListener("click", () => void openSettings());
 stopRunButton.addEventListener("click", () => void stopRun());
 taskForm.addEventListener("submit", (event) => void startRun(event));
+skillsButton.addEventListener("click", openSkills);
+memoryButton.addEventListener("click", openMemory);
+refreshSkillsButton.addEventListener("click", () => void loadProjectContext(true));
+memoryForm.addEventListener("submit", (event) => void saveMemory(event));
+memoryInput.addEventListener("input", renderMemoryCharacterCount);
+closeMemoryButton.addEventListener("click", () => memoryDialog.close());
+cancelMemoryButton.addEventListener("click", () => memoryDialog.close());
 settingsForm.addEventListener("submit", (event) => void saveSettings(event));
 useModelScopePresetButton.addEventListener("click", useModelScopePreset);
 openModelScopeTokenButton.addEventListener("click", () => void api.openModelScopeTokenPage());
@@ -128,11 +157,14 @@ async function selectProject(): Promise<void> {
     project = selected;
     selectedFile = null;
     changes = [];
+    selectedSkillIds.clear();
+    projectContext = { skills: [], memory: "", maxMemoryChars: 12_000, maxSelectedSkills: 8 };
     treeInitialized = false;
     expandedDirectories.clear();
     renderProject();
     renderChanges();
     showProjectWelcome();
+    await loadProjectContext();
   } catch (error) {
     notify(errorMessage(error));
   }
@@ -225,6 +257,7 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     details.addEventListener("toggle", () => {
       if (details.open) {
         expandedDirectories.add(directory.relativePath);
+        populateDirectory(details, directory, depth + 1);
       } else {
         expandedDirectories.delete(directory.relativePath);
       }
@@ -241,7 +274,10 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     label.className = "tree-label";
     label.textContent = directory.name;
     summary.append(twistie, folderIcon, label);
-    details.append(summary, renderTree(directory, depth + 1));
+    details.append(summary);
+    if (details.open) {
+      populateDirectory(details, directory, depth + 1);
+    }
     item.append(details);
     list.append(item);
   }
@@ -269,6 +305,14 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     list.append(item);
   }
   return list;
+}
+
+function populateDirectory(details: HTMLDetailsElement, directory: TreeNode, depth: number): void {
+  if (details.dataset.loaded === "true") {
+    return;
+  }
+  details.append(renderTree(directory, depth));
+  details.dataset.loaded = "true";
 }
 
 function updateFileSelection(): void {
@@ -438,7 +482,11 @@ async function startRun(event: SubmitEvent): Promise<void> {
     return;
   }
   try {
-    const result = await api.startRun({ task, selectedFile: selectedFile ?? undefined });
+    const result = await api.startRun({
+      task,
+      selectedFile: selectedFile ?? undefined,
+      skillIds: Array.from(selectedSkillIds),
+    });
     if (!result.started) {
       notify(result.message ?? "任务未能启动。");
       return;
@@ -541,6 +589,9 @@ function appendTimeline(
   body.append(heading, copy);
   item.append(dot, body);
   timeline.append(item);
+  while (timeline.childElementCount > 160) {
+    timeline.firstElementChild?.remove();
+  }
   timeline.scrollTop = timeline.scrollHeight;
 }
 
@@ -555,7 +606,10 @@ function appendOutput(text: string): void {
   if (outputLog.textContent === "等待 Agent 运行命令或工具…") {
     outputLog.textContent = "";
   }
-  outputLog.textContent = `${outputLog.textContent ?? ""}${outputLog.textContent ? "\n\n" : ""}${text}`;
+  const combined = `${outputLog.textContent ?? ""}${outputLog.textContent ? "\n\n" : ""}${text}`;
+  outputLog.textContent = combined.length > 100_000
+    ? `…较早输出已省略…\n\n${combined.slice(-96_000)}`
+    : combined;
   outputLog.scrollTop = outputLog.scrollHeight;
 }
 
@@ -563,6 +617,8 @@ function setRunning(isRunning: boolean, failed = false): void {
   stopRunButton.disabled = !isRunning;
   startRunButton.disabled = isRunning;
   openProjectButton.disabled = isRunning;
+  skillsButton.disabled = isRunning || !project;
+  memoryButton.disabled = isRunning || !project;
   setRunStatus(isRunning ? "运行中" : failed ? "出错" : "待命", isRunning ? "running" : failed ? "error" : "idle");
 }
 
@@ -629,6 +685,126 @@ function notify(message: string): void {
   toast.textContent = message;
   toast.classList.add("visible");
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 3_200);
+}
+
+async function loadProjectContext(showMessage = false): Promise<void> {
+  if (!project) {
+    return;
+  }
+  try {
+    projectContext = await api.getProjectContext();
+    const availableIds = new Set(projectContext.skills.map((skill) => skill.id));
+    for (const id of selectedSkillIds) {
+      if (!availableIds.has(id)) {
+        selectedSkillIds.delete(id);
+      }
+    }
+    renderContextControls();
+    renderSkillList();
+    if (showMessage) {
+      notify(`已发现 ${projectContext.skills.length} 个 Skill。`);
+    }
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+function renderContextControls(): void {
+  skillsButton.disabled = !project;
+  memoryButton.disabled = !project;
+  skillsBadge.textContent = projectContext.skills.length
+    ? `${selectedSkillIds.size}/${projectContext.skills.length}`
+    : "0";
+  skillsButton.classList.toggle("active", selectedSkillIds.size > 0);
+  const hasMemory = projectContext.memory.trim().length > 0;
+  memoryBadge.textContent = hasMemory ? "已保存" : "未设置";
+  memoryButton.classList.toggle("active", hasMemory);
+}
+
+function openSkills(): void {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  renderSkillList();
+  skillsDialog.showModal();
+}
+
+function renderSkillList(): void {
+  skillList.replaceChildren();
+  if (projectContext.skills.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "context-empty";
+    const mark = document.createElement("span");
+    mark.textContent = "◇";
+    const title = document.createElement("strong");
+    title.textContent = "这个项目还没有 Skill";
+    const copy = document.createElement("p");
+    copy.textContent = "在 .localforge/skills 中添加 Markdown 文件，然后重新扫描。";
+    empty.append(mark, title, copy);
+    skillList.append(empty);
+    return;
+  }
+  for (const skill of projectContext.skills) {
+    const label = document.createElement("label");
+    label.className = "skill-option";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedSkillIds.has(skill.id);
+    const copy = document.createElement("span");
+    const heading = document.createElement("strong");
+    heading.textContent = skill.name;
+    const description = document.createElement("small");
+    description.textContent = skill.description;
+    const file = document.createElement("code");
+    file.textContent = skill.relativePath;
+    copy.append(heading, description, file);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        if (selectedSkillIds.size >= projectContext.maxSelectedSkills) {
+          checkbox.checked = false;
+          notify(`每次任务最多选择 ${projectContext.maxSelectedSkills} 个 Skill。`);
+          return;
+        }
+        selectedSkillIds.add(skill.id);
+      } else {
+        selectedSkillIds.delete(skill.id);
+      }
+      renderContextControls();
+    });
+    label.append(checkbox, copy);
+    skillList.append(label);
+  }
+}
+
+function openMemory(): void {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  memoryInput.value = projectContext.memory;
+  memoryInput.maxLength = projectContext.maxMemoryChars;
+  memoryError.textContent = "";
+  renderMemoryCharacterCount();
+  memoryDialog.showModal();
+  memoryInput.focus();
+}
+
+function renderMemoryCharacterCount(): void {
+  memoryCharacterCount.textContent = `${memoryInput.value.length.toLocaleString()} / ${projectContext.maxMemoryChars.toLocaleString()}`;
+}
+
+async function saveMemory(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  memoryError.textContent = "";
+  try {
+    projectContext = await api.saveProjectMemory(memoryInput.value);
+    renderContextControls();
+    memoryDialog.close();
+    notify(projectContext.memory.trim() ? "项目记忆已保存。" : "项目记忆已清空。");
+  } catch (error) {
+    memoryError.textContent = errorMessage(error);
+  }
 }
 
 function formatBytes(bytes: number): string {

@@ -14,6 +14,9 @@ LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用
 - 对每条本地命令显示原因、命令和工作目录，并由用户逐次批准。
 - 支持命令超时、输出截断、任务取消和最大步骤限制。
 - 展示模型回合、工具结果、运行输出、变更文件及任务前后双栏 Diff。
+- 从项目 `.localforge/skills/*.md` 发现可选 Skill，并在运行时注入选中的工作方法。
+- 提供按项目隔离的 Memory；长期约定保存在 LocalForge 本地数据中，不污染 Git 仓库。
+- 大目录按展开状态延迟渲染，并限制界面中的历史输出，避免长任务拖慢前端。
 - API Key 使用操作系统安全存储加密，也可通过 `LOCALFORGE_API_KEY` 提供。
 - 内置 ModelScope 的 Qwen3 Coder 30B 免费推理预设；模型针对代码 Agent 和工具调用，免费额度适合课程演示。
 
@@ -28,7 +31,7 @@ pnpm test
 pnpm start
 ```
 
-启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址、模型名称和 API Key。然后在右侧输入任务。也可以先执行 `pnpm build`，只生成桌面程序的开发构建。
+启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址、模型名称和 API Key。右侧的 `Skill` 用于选择项目工作方式，`Memory` 用于保存不进入仓库的长期上下文，然后即可输入任务。也可以先执行 `pnpm build`，只生成桌面程序的开发构建。
 
 ModelScope 免费 API 需要账号绑定已实名认证的阿里云账号，当前通常为每天 2,000 次总调用、单模型最多 200 次，大模型可能另有限额且会动态调整。Token 只保存在操作系统安全存储中；切换 API 服务时，LocalForge 不会把原服务的 Key 发送到新地址。
 
@@ -46,6 +49,7 @@ src/
   preload.ts   最小权限的安全桥接
 tests/         Agent、工具、路径和桌面项目服务测试
 docs/          软件生命周期文档、ADR 与界面原型
+.localforge/skills/  项目可共享的 Skill Markdown（按需创建）
 ```
 
 ## 开发原则

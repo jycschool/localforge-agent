@@ -23,6 +23,9 @@ flowchart LR
     C --> R
     C --> S[ConfigStore / safeStorage]
     C --> D[ChangeTracker / Diff]
+    C --> K[ProjectContextStore]
+    K --> SK[.localforge/skills/*.md]
+    K --> MM[(本机项目 Memory)]
 ```
 
 ## 3. 进程与模块职责
@@ -34,6 +37,8 @@ flowchart LR
 | `main.ts` | 窗口安全策略、项目状态、IPC、任务编排和审批解析 | 决定模型下一步行为 |
 | `desktop/projectService.ts` | 过滤项目树、限制文件预览、真实路径检查 | 修改文件 |
 | `desktop/configStore.ts` | 配置验证、系统加密存储、环境变量覆盖 | 向 Renderer 暴露 Key 明文 |
+| `desktop/projectContextStore.ts` | Skill 发现、Memory 隔离存储、上下文限制 | 自动执行 Skill 或修改项目文件 |
+| `agent/systemPrompt.ts` | 合并固定安全提示、Memory 和选中 Skill | 信任过期记忆代替读取代码 |
 | `agent/agentLoop.ts` | 消息历史、工具调度、循环、取消、终止和事件 | 具体工具实现 |
 | `model/openAICompatibleClient.ts` | HTTP、响应解析和 tool call 规范化 | 自动执行工具 |
 | `agent/toolRegistry.ts` | 工具 schema、调用和统一错误结果 | UI 渲染 |
@@ -108,6 +113,10 @@ stateDiagram-v2
 
 系统提示包含角色、工作区约束、审批和验证原则。用户任务可带当前选中文件路径；模型必须通过文件工具读取实际内容。消息历史保留每轮回复、tool call 与 tool result。
 
+项目 Skill 是 `.localforge/skills` 下最多 24 个、每个不超过 32 KB 的 Markdown 文件。每次任务最多选择 8 个，注入正文总量不超过 64,000 字符。Renderer 只提交 Skill id，主进程在任务开始时重新扫描并读取，避免把页面提供的任意内容直接当作指令。Skill 可约束项目工作方式，但不能覆盖路径、审批和系统安全边界。
+
+Memory 是用户维护的轻量文本，最多 12,000 字符。`ProjectContextStore` 使用项目真实路径的 SHA-256 摘要作为存储键，文件位于 Electron `userData/project-memory`，因此不会污染项目仓库。Memory 每次任务自动注入，并明确标记“可能过期，应以当前文件核实”。首版不做向量检索、自动记忆或模型自主改写，避免形成不可观察的隐式状态。
+
 ChangeTracker 在任务中对每个文件只捕获一次原始内容。任务结束后主进程读取当前内容，Renderer 提供双栏只读对比。首版不自动提交、推送或撤销，避免扩大 Agent 权限。
 
 ## 9. 错误处理
@@ -121,7 +130,9 @@ ChangeTracker 在任务中对每个文件只捕获一次原始内容。任务结
 | 用户拒绝命令 | 不创建进程，将拒绝作为工具结果返回 |
 | 命令超时或用户停止 | 终止进程，返回已有输出或取消状态 |
 | 文件过多/过大 | 目录树最多 2,000 文件，预览文件最多 1 MB |
+| Skill 缺失/过大 | 重新扫描后忽略，未勾选内容不进入上下文 |
+| Memory 过长/损坏 | 拒绝保存或明确提示本地数据读取失败 |
 
 ## 10. 可扩展点
 
-ModelClient 和 ToolRegistry 已通过接口隔离，可增加其他兼容协议或工具。首版不加入多 Agent、远程执行、完整编辑器或动态插件，以保证 9 月 2 日前闭环稳定。
+ModelClient 和 ToolRegistry 已通过接口隔离，可增加其他兼容协议或工具。Skill 当前只作为用户选择的 Markdown 上下文，不加载代码或动态注册工具。首版不加入多 Agent、远程执行、完整编辑器或动态插件，以保证 9 月 2 日前闭环稳定。

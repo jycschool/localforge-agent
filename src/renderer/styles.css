@@ -815,6 +815,69 @@ textarea:focus-visible {
   background: #0e1115;
 }
 
+.composer-heading,
+.context-actions,
+.memory-meta {
+  display: flex;
+  align-items: center;
+}
+
+.composer-heading {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.context-actions {
+  gap: 6px;
+}
+
+.context-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.context-button:hover:not(:disabled),
+.context-button.active {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.context-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.context-button-icon {
+  color: #8ab4f8;
+  font-size: 12px;
+}
+
+.context-button-icon.memory {
+  color: #b6a5ff;
+  font-size: 7px;
+}
+
+.context-badge,
+.context-status {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-button.active .context-badge,
+.context-button.active .context-status {
+  color: var(--accent);
+}
+
 .composer label,
 .modal label {
   color: #c6ccd4;
@@ -823,7 +886,8 @@ textarea:focus-visible {
 }
 
 .composer textarea,
-.modal input {
+.modal input,
+.modal textarea {
   width: 100%;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -839,7 +903,8 @@ textarea:focus-visible {
 }
 
 .composer textarea::placeholder,
-.modal input::placeholder {
+.modal input::placeholder,
+.modal textarea::placeholder {
   color: var(--faint);
 }
 
@@ -875,6 +940,131 @@ textarea:focus-visible {
   display: grid;
   gap: 15px;
   padding: 20px;
+}
+
+.modal-eyebrow {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.context-modal {
+  width: min(560px, calc(100% - 40px));
+}
+
+.context-modal header h2 {
+  margin-top: 4px;
+}
+
+.context-modal header code,
+.skill-option code {
+  color: #8ab4f8;
+  font-family: var(--mono);
+}
+
+.skill-list {
+  display: grid;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #0e1115;
+}
+
+.skill-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.skill-option + .skill-option {
+  border-top: 1px solid var(--border);
+}
+
+.skill-option:hover {
+  background: var(--surface-2);
+}
+
+.skill-option input {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.skill-option > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.skill-option strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.skill-option small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-option code {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 30px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.context-empty > span {
+  color: #8ab4f8;
+  font-size: 22px;
+}
+
+.context-empty strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.context-empty p {
+  margin: 0;
+  font-size: 11px;
+}
+
+.context-modal textarea {
+  width: 100%;
+  min-height: 190px;
+  padding: 10px 11px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.memory-meta {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -7px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.memory-meta span:last-child {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal header {

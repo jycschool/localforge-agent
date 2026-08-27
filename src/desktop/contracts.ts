@@ -4,6 +4,8 @@ export const IPC_CHANNELS = {
   selectProject: "project:select",
   refreshProject: "project:refresh",
   readFile: "project:read-file",
+  getProjectContext: "project:get-context",
+  saveProjectMemory: "project:save-memory",
   getSettings: "settings:get",
   saveSettings: "settings:save",
   openModelScopeTokenPage: "app:open-modelscope-token-page",
@@ -35,6 +37,20 @@ export interface FileSnapshot {
   language: string;
 }
 
+export interface ProjectSkill {
+  id: string;
+  name: string;
+  description: string;
+  relativePath: string;
+}
+
+export interface ProjectContextSnapshot {
+  skills: ProjectSkill[];
+  memory: string;
+  maxMemoryChars: number;
+  maxSelectedSkills: number;
+}
+
 export interface PublicSettings {
   apiBaseUrl: string;
   model: string;
@@ -57,6 +73,7 @@ export interface SettingsInput {
 export interface RunRequest {
   task: string;
   selectedFile?: string;
+  skillIds?: string[];
 }
 
 export interface RunStartResult {
@@ -74,6 +91,8 @@ export interface DesktopApi {
   selectProject(): Promise<ProjectSnapshot | null>;
   refreshProject(): Promise<ProjectSnapshot | null>;
   readFile(relativePath: string): Promise<FileSnapshot>;
+  getProjectContext(): Promise<ProjectContextSnapshot>;
+  saveProjectMemory(memory: string): Promise<ProjectContextSnapshot>;
   getSettings(): Promise<PublicSettings>;
   saveSettings(input: SettingsInput): Promise<PublicSettings>;
   openModelScopeTokenPage(): Promise<void>;

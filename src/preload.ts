@@ -17,6 +17,9 @@ const api: DesktopApi = {
   selectProject: () => ipcRenderer.invoke(IPC_CHANNELS.selectProject),
   refreshProject: () => ipcRenderer.invoke(IPC_CHANNELS.refreshProject),
   readFile: (relativePath) => ipcRenderer.invoke(IPC_CHANNELS.readFile, relativePath),
+  getProjectContext: () => ipcRenderer.invoke(IPC_CHANNELS.getProjectContext),
+  saveProjectMemory: (memory) =>
+    ipcRenderer.invoke(IPC_CHANNELS.saveProjectMemory, memory),
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.getSettings),
   saveSettings: (input: SettingsInput) => ipcRenderer.invoke(IPC_CHANNELS.saveSettings, input),
   openModelScopeTokenPage: () => ipcRenderer.invoke(IPC_CHANNELS.openModelScopeTokenPage),

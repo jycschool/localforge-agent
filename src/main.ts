@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { AgentLoop } from "./agent/agentLoop";
 import { ChangeTracker } from "./agent/changeTracker";
+import { buildSystemPrompt } from "./agent/systemPrompt";
 import { ToolRegistry } from "./agent/toolRegistry";
 import type { AgentEvent, CommandApprovalRequest } from "./core/protocol";
 import { ConfigStore } from "./desktop/configStore";
@@ -13,6 +14,7 @@ import {
   type SettingsInput,
 } from "./desktop/contracts";
 import { readProjectFile, scanProject } from "./desktop/projectService";
+import { ProjectContextStore } from "./desktop/projectContextStore";
 import { OpenAICompatibleClient } from "./model/openAICompatibleClient";
 import { createWorkspaceTools } from "./tools/workspaceTools";
 
@@ -51,7 +53,7 @@ function createWindow(): void {
   });
 }
 
-function registerIpc(configStore: ConfigStore): void {
+function registerIpc(configStore: ConfigStore, contextStore: ProjectContextStore): void {
   ipcMain.handle(IPC_CHANNELS.selectProject, async () => {
     if (activeController) {
       throw new Error("Agent 运行期间不能切换项目。");
@@ -84,6 +86,16 @@ function registerIpc(configStore: ConfigStore): void {
     return readProjectFile(rootPath, relativePath);
   });
 
+  ipcMain.handle(IPC_CHANNELS.getProjectContext, () =>
+    contextStore.getContext(requireProject()),
+  );
+  ipcMain.handle(IPC_CHANNELS.saveProjectMemory, (_event, memory: unknown) => {
+    if (typeof memory !== "string") {
+      throw new Error("项目记忆内容无效。");
+    }
+    return contextStore.saveMemory(requireProject(), memory);
+  });
+
   ipcMain.handle(IPC_CHANNELS.getSettings, () => configStore.publicSettings());
   ipcMain.handle(IPC_CHANNELS.saveSettings, (_event, input: SettingsInput) =>
     configStore.save(input),
@@ -106,6 +118,10 @@ function registerIpc(configStore: ConfigStore): void {
     if (!apiKey) {
       return { started: false, message: "请先在设置中填写 API Key。" };
     }
+    const [memory, skills] = await Promise.all([
+      contextStore.getMemory(rootPath),
+      contextStore.getSelectedSkills(rootPath, request.skillIds),
+    ]);
 
     changeTracker.clear();
     const tools = await createWorkspaceTools({
@@ -127,11 +143,10 @@ function registerIpc(configStore: ConfigStore): void {
     const contextualTask = request.selectedFile
       ? `${task}\n\nThe user currently has ${request.selectedFile} selected in the read-only preview.`
       : task;
-
     void loop
       .run({
         task: contextualTask,
-        systemPrompt: buildSystemPrompt(),
+        systemPrompt: buildSystemPrompt({ memory, skills }),
         maxSteps: settings.maxSteps,
         signal: controller.signal,
         onEvent: sendAgentEvent,
@@ -218,18 +233,8 @@ async function collectChanges(rootPath: string): Promise<ChangedFileSnapshot[]> 
   );
 }
 
-function buildSystemPrompt(): string {
-  return [
-    "You are LocalForge, a transparent coding agent working only inside the opened project.",
-    "Inspect relevant files before editing and keep changes narrowly scoped to the user's task.",
-    "Use workspace tools for every file operation. Never invent file contents.",
-    "Before running a command, provide a clear reason; the desktop app will ask the user for approval.",
-    "After making changes, run the smallest relevant verification when possible and summarize the result.",
-  ].join(" ");
-}
-
 app.whenReady().then(() => {
-  registerIpc(new ConfigStore());
+  registerIpc(new ConfigStore(), new ProjectContextStore(app.getPath("userData")));
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

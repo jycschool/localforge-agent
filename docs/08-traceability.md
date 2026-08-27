@@ -16,6 +16,8 @@
 | FR-10 变更审查 | ChangeTracker、Renderer Diff | 首次快照和双栏渲染 | 从变更列表打开 Diff |
 | FR-11 验证证据 | `run_command`、output panel | exit code、stdout/stderr | 首测失败、二测通过 |
 | FR-12 模型配置 | ConfigStore、ModelClient | URL/数值验证、Key 隔离 | 展示模型名，不展示 Key |
+| FR-13 项目 Skill | ProjectContextStore、systemPrompt、上下文弹窗 | `projectContextStore.test.ts`、`systemPrompt.test.ts` | 勾选 Skill 后执行任务 |
+| FR-14 项目 Memory | ProjectContextStore、Memory 弹窗 | 保存、更新、长度、项目隔离测试 | 保存后重新打开并执行任务 |
 
 ## 非功能追踪
 
@@ -26,9 +28,9 @@
 | NFR-03 可控 | 最大步骤、AbortSignal、逐次审批 | Agent 取消/步数单测、命令人工测试 |
 | NFR-04 可观察 | AgentEvent、timeline、output panel | 窗口检查和端到端视频 |
 | NFR-05 可靠 | 结构化工具错误和 run 状态 | AgentLoop 工具错误测试 |
-| NFR-06 性能 | 目录过滤、2,000 文件/1 MB 上限 | 项目服务单测、大项目人工检查 |
+| NFR-06 性能 | 目录过滤、2,000 文件/1 MB 上限、目录懒渲染、UI 输出上限 | 项目服务单测、大项目人工检查 |
 | NFR-07 可维护 | contracts、ModelClient、ToolRegistry 接口 | 模块依赖评审、类型检查 |
-| NFR-08 可测试 | 核心模块无 Electron 依赖 | 当前 14 项自动化测试 |
+| NFR-08 可测试 | 核心模块无 Electron 依赖 | 当前 25 项自动化测试 |
 
 ## 交付追踪
 

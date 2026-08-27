@@ -121,7 +121,21 @@
             </div>
           </section>
           <form id="task-form" class="composer">
-            <label for="task-input">给 Agent 一个任务</label>
+            <div class="composer-heading">
+              <label for="task-input">给 Agent 一个任务</label>
+              <div class="context-actions" aria-label="Agent 上下文">
+                <button id="skills-button" class="context-button" type="button" disabled>
+                  <span class="context-button-icon" aria-hidden="true">◇</span>
+                  Skill
+                  <span id="skills-badge" class="context-badge">0</span>
+                </button>
+                <button id="memory-button" class="context-button" type="button" disabled>
+                  <span class="context-button-icon memory" aria-hidden="true">●</span>
+                  Memory
+                  <span id="memory-badge" class="context-status">未设置</span>
+                </button>
+              </div>
+            </div>
             <textarea
               id="task-input"
               rows="4"
@@ -186,6 +200,54 @@
           <div>
             <button class="button button-secondary" value="cancel" type="submit">取消</button>
             <button id="save-settings" class="button button-primary" value="default" type="submit">保存设置</button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="skills-dialog" class="modal context-modal">
+      <form method="dialog">
+        <header>
+          <div>
+            <span class="modal-eyebrow">PROJECT CONTEXT</span>
+            <h2>本次任务使用的 Skills</h2>
+            <p>来自项目内 <code>.localforge/skills/*.md</code>，运行时重新读取；每次最多选择 8 个。</p>
+          </div>
+          <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
+        </header>
+        <section id="skill-list" class="skill-list"></section>
+        <footer>
+          <button id="refresh-skills" class="text-button" type="button">重新扫描</button>
+          <button class="button button-primary" value="default" type="submit">完成</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="memory-dialog" class="modal context-modal">
+      <form id="memory-form">
+        <header>
+          <div>
+            <span class="modal-eyebrow">PRIVATE PROJECT MEMORY</span>
+            <h2>项目记忆</h2>
+            <p>记录约定、偏好和长期背景；保存在本机，不写入项目仓库。</p>
+          </div>
+          <button id="close-memory" class="close-button" aria-label="关闭" type="button">×</button>
+        </header>
+        <label for="memory-input">给 Agent 的长期上下文</label>
+        <textarea
+          id="memory-input"
+          rows="10"
+          placeholder="例如：项目使用 pnpm；修改公共接口时必须补充单元测试；界面文案使用中文。"
+        ></textarea>
+        <div class="memory-meta">
+          <span>每次任务自动带入，事实仍以当前代码为准。</span>
+          <span id="memory-character-count">0 / 12,000</span>
+        </div>
+        <footer>
+          <span id="memory-error" class="form-error" role="alert"></span>
+          <div>
+            <button id="cancel-memory" class="button button-secondary" type="button">取消</button>
+            <button id="save-memory" class="button button-primary" type="submit">保存记忆</button>
           </div>
         </footer>
       </form>
