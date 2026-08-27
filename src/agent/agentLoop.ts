@@ -53,7 +53,10 @@ export class AgentLoop {
 
         const calls = assistant.tool_calls ?? [];
         if (calls.length === 0) {
-          const summary = assistant.content?.trim() || "Task completed without a final summary.";
+          const summary = assistant.content?.trim();
+          if (!summary) {
+            throw new Error("Model returned neither text nor tool calls.");
+          }
           options.onEvent({ type: "run_completed", summary, steps });
           return { status: "completed", summary, steps, messages };
         }

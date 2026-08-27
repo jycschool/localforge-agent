@@ -55,6 +55,36 @@ describe("AgentLoop", () => {
     expect(events.at(-1)?.type).toBe("run_completed");
   });
 
+  it("fails instead of reporting success for an empty model response", async () => {
+    const loop = new AgentLoop(
+      new ScriptedModel([{ role: "assistant", content: null }]),
+      new ToolRegistry([]),
+    );
+    const events: AgentEvent[] = [];
+    const result = await loop.run(defaultOptions(events));
+
+    expect(result.status).toBe("failed");
+    expect(result.summary).toBe("Model returned neither text nor tool calls.");
+    expect(events.at(-1)).toMatchObject({
+      type: "run_failed",
+      message: "Model returned neither text nor tool calls.",
+    });
+  });
+
+  it("records a model request error as a failed run", async () => {
+    const loop = new AgentLoop(new ScriptedModel([]), new ToolRegistry([]));
+    const events: AgentEvent[] = [];
+    const result = await loop.run(defaultOptions(events));
+
+    expect(result.status).toBe("failed");
+    expect(result.summary).toBe("No scripted response remains.");
+    expect(events.at(-1)).toMatchObject({
+      type: "run_failed",
+      message: "No scripted response remains.",
+      steps: 1,
+    });
+  });
+
   it("feeds a tool result back into the next model turn", async () => {
     const model = new ScriptedModel([
       {

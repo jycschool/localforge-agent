@@ -158,6 +158,7 @@ ToolRegistry 保存工具名到实现的唯一映射，并把 schema 提供给�
 | 条件 | AgentRunResult | 界面事件 | 是否继续调用模型 |
 | --- | --- | --- | --- |
 | assistant 无 tool calls 且有文本 | `completed` | `run_completed` | 否 |
+| assistant 既无文本也无 tool calls | `failed` | `run_failed` | 否，不允许默认摘要伪报完成 |
 | 用户点击停止/AbortSignal | `cancelled` | `run_cancelled` | 否 |
 | 达到最大步骤 | `failed` | `run_failed` | 否 |
 | 不可恢复的模型认证、网络或协议错误 | `failed` | `run_failed` | 否 |
