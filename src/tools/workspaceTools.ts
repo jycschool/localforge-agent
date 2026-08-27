@@ -134,16 +134,17 @@ function createListFilesTool(resolver: WorkspacePathResolver, maxOutputChars: nu
         },
       },
     },
-    async execute(argumentsValue) {
+    async execute(argumentsValue, context) {
       const pattern = optionalString(argumentsValue, "glob") ?? "**/*";
       const limit = optionalInteger(argumentsValue, "limit", 1, 500) ?? 200;
       const matcher = globMatcher(pattern);
       const files: string[] = [];
       await walkFiles(resolver.root(), async (absolutePath, relativePath) => {
-        if (files.length < limit && matcher(relativePath)) {
+        if (matcher(relativePath)) {
           files.push(relativePath);
         }
-      });
+        return files.length < limit;
+      }, context.signal);
       const payload = { files, count: files.length, limited: files.length >= limit };
       return textResult(payload, maxOutputChars);
     },
@@ -176,7 +177,7 @@ function createSearchTextTool(resolver: WorkspacePathResolver, maxOutputChars: n
       const matcher = globMatcher(include);
       const matches: Array<{ path: string; line: number; text: string }> = [];
       await walkFiles(resolver.root(), async (absolutePath, relativePath) => {
-        if (context.signal.aborted || matches.length >= limit || !matcher(relativePath)) {
+        if (!matcher(relativePath)) {
           return;
         }
         let content: string;
@@ -196,7 +197,8 @@ function createSearchTextTool(resolver: WorkspacePathResolver, maxOutputChars: n
             matches.push({ path: relativePath, line: index + 1, text: line.slice(0, 400) });
           }
         }
-      });
+        return matches.length < limit;
+      }, context.signal);
       return textResult({ matches, count: matches.length, limited: matches.length >= limit }, maxOutputChars);
     },
   };
@@ -522,26 +524,42 @@ function appendBounded(
 
 async function walkFiles(
   rootPath: string,
-  visit: (absolutePath: string, relativePath: string) => Promise<void>,
+  visit: (absolutePath: string, relativePath: string) => Promise<boolean | void>,
+  signal: AbortSignal,
 ): Promise<void> {
-  async function walk(directory: string): Promise<void> {
+  async function walk(directory: string): Promise<boolean> {
+    throwIfAborted(signal);
     const entries = await readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
+      throwIfAborted(signal);
       if (entry.isSymbolicLink()) {
         continue;
       }
       const absolutePath = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) {
-          await walk(absolutePath);
+        if (!IGNORED_DIRECTORIES.has(entry.name) && !(await walk(absolutePath))) {
+          return false;
         }
       } else if (entry.isFile()) {
-        await visit(absolutePath, normalizeRelative(path.relative(rootPath, absolutePath)));
+        const shouldContinue = await visit(
+          absolutePath,
+          normalizeRelative(path.relative(rootPath, absolutePath)),
+        );
+        if (shouldContinue === false) {
+          return false;
+        }
       }
     }
+    return true;
   }
   await walk(rootPath);
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new DOMException("The workspace traversal was aborted.", "AbortError");
+  }
 }
 
 function globMatcher(pattern: string): (relativePath: string) => boolean {

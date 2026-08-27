@@ -26,6 +26,41 @@ describe("workspace tools", () => {
     expect(payload.files).toEqual(["index.ts", "src/main.ts"]);
   });
 
+  it("stops listing and searching when their configured result limit is reached", async () => {
+    const { tools } = await createFixture();
+    const listResult = await tool(tools, "list_files").execute(
+      { glob: "**/*.ts", limit: 1 },
+      executionContext(),
+    );
+    const searchResult = await tool(tools, "search_text").execute(
+      { query: "export", include: "**/*.ts", limit: 1 },
+      executionContext(),
+    );
+
+    expect(JSON.parse(listResult.content)).toMatchObject({
+      files: ["index.ts"],
+      count: 1,
+      limited: true,
+    });
+    expect(JSON.parse(searchResult.content)).toMatchObject({ count: 1, limited: true });
+  });
+
+  it("aborts workspace traversal instead of scanning the remaining tree", async () => {
+    const { tools } = await createFixture();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      tool(tools, "list_files").execute({}, executionContext(true, controller.signal)),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    await expect(
+      tool(tools, "search_text").execute(
+        { query: "export" },
+        executionContext(true, controller.signal),
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("reads and precisely replaces one occurrence while tracking the original", async () => {
     const { tools, tracker } = await createFixture();
     const before = await tool(tools, "read_file").execute(
