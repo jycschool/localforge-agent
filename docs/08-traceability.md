@@ -32,7 +32,7 @@
 | NFR-05 可靠 | 严格响应解析、结构化工具错误和持久化 run 状态 | ModelClient、AgentLoop、RunHistoryStore 测试 |
 | NFR-06 性能 | 目录过滤、2,000 文件/1 MB 上限、目录懒渲染、UI 输出上限 | 项目服务单测、大项目人工检查 |
 | NFR-07 可维护 | contracts、ModelClient、ToolRegistry 接口 | 模块依赖评审、类型检查 |
-| NFR-08 可测试 | 核心模块与 Preload/配置边界可隔离验证 | 当前 50 项自动化测试 |
+| NFR-08 可测试 | 核心模块与 Preload/配置/富文本边界可隔离验证 | 当前 55 项自动化测试 |
 
 ## 交付追踪
 

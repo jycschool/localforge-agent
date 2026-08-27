@@ -10,6 +10,7 @@ import type {
   RunHistorySummary,
 } from "../desktop/contracts";
 import { fileVisualFor } from "./fileIcons";
+import { compactMarkdownText, parseSafeMarkdown, type InlineToken } from "./safeMarkdown";
 
 declare global {
   interface Window {
@@ -41,6 +42,7 @@ const selectedSkillIds = new Set<string>();
 let approvalAnswered = false;
 let toastTimer: number | undefined;
 let treeInitialized = false;
+let lastAssistantMessage = "";
 const expandedDirectories = new Set<string>();
 
 const openProjectButton = element<HTMLButtonElement>("open-project");
@@ -537,6 +539,7 @@ async function stopRun(): Promise<void> {
 function handleAgentEvent(event: AgentEvent): void {
   switch (event.type) {
     case "run_started":
+      lastAssistantMessage = "";
       setRunning(true);
       appendTimeline("开始任务", event.task, "active");
       break;
@@ -544,7 +547,8 @@ function handleAgentEvent(event: AgentEvent): void {
       appendTimeline(`第 ${event.step} 步`, "模型正在决定下一项操作…", "active");
       break;
     case "assistant_message":
-      appendTimeline("Agent", event.text, "success");
+      lastAssistantMessage = event.text.trim();
+      appendTimeline("Agent", event.text, "success", true);
       break;
     case "tool_started":
       appendTimeline(
@@ -562,7 +566,12 @@ function handleAgentEvent(event: AgentEvent): void {
       );
       break;
     case "run_completed":
-      appendTimeline("任务完成", event.summary, "success");
+      if (lastAssistantMessage === event.summary.trim()) {
+        appendTimeline("任务完成", `共执行 ${event.steps} 步，完整结果见上一条 Agent 消息。`, "success");
+      } else {
+        appendTimeline("任务完成", event.summary, "success", true);
+      }
+      lastAssistantMessage = "";
       setRunning(false);
       break;
     case "run_cancelled":
@@ -598,6 +607,7 @@ function appendTimeline(
   title: string,
   detail: string,
   state: "active" | "success" | "error",
+  rich = false,
 ): void {
   document.getElementById("timeline-empty")?.remove();
   const item = document.createElement("article");
@@ -609,9 +619,13 @@ function appendTimeline(
   body.className = "timeline-body";
   const heading = document.createElement("strong");
   heading.textContent = title;
-  const copy = document.createElement(detail.includes("\n") ? "pre" : "p");
-  copy.textContent = detail;
-  body.append(heading, copy);
+  if (rich) {
+    body.append(heading, renderRichText(detail));
+  } else {
+    const copy = document.createElement(detail.includes("\n") ? "pre" : "p");
+    copy.textContent = detail;
+    body.append(heading, copy);
+  }
   item.append(dot, body);
   timeline.append(item);
   while (timeline.childElementCount > 160) {
@@ -621,7 +635,60 @@ function appendTimeline(
 }
 
 function clearTimeline(): void {
+  lastAssistantMessage = "";
   timeline.replaceChildren();
+}
+
+function renderRichText(value: string): HTMLElement {
+  const root = document.createElement("div");
+  root.className = "rich-text";
+  for (const block of parseSafeMarkdown(value)) {
+    if (block.kind === "code") {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      if (block.language) {
+        code.dataset.language = block.language;
+      }
+      code.textContent = block.value;
+      pre.append(code);
+      root.append(pre);
+      continue;
+    }
+    if (block.kind === "list") {
+      const list = document.createElement(block.ordered ? "ol" : "ul");
+      for (const item of block.items) {
+        const entry = document.createElement("li");
+        appendInline(entry, item);
+        list.append(entry);
+      }
+      root.append(list);
+      continue;
+    }
+    const tag =
+      block.kind === "heading"
+        ? block.level <= 2
+          ? "h4"
+          : "h5"
+        : block.kind === "quote"
+          ? "blockquote"
+          : "p";
+    const element = document.createElement(tag);
+    appendInline(element, block.content);
+    root.append(element);
+  }
+  return root;
+}
+
+function appendInline(parent: HTMLElement, tokens: InlineToken[]): void {
+  for (const token of tokens) {
+    if (token.kind === "text") {
+      parent.append(document.createTextNode(token.value));
+      continue;
+    }
+    const element = document.createElement(token.kind === "strong" ? "strong" : "code");
+    element.textContent = token.value;
+    parent.append(element);
+  }
 }
 
 function appendOutput(text: string): void {
@@ -880,8 +947,7 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
   summary.className = "history-summary";
   const summaryTitle = document.createElement("strong");
   summaryTitle.textContent = "执行结果";
-  const summaryCopy = document.createElement("p");
-  summaryCopy.textContent = detail.summary;
+  const summaryCopy = renderRichText(detail.summary);
   summary.append(summaryTitle, summaryCopy);
 
   const context = document.createElement("div");
@@ -1002,13 +1068,13 @@ function historyEventText(event: AgentEvent): string {
     case "model_started":
       return `模型请求 · 第 ${event.step} 步`;
     case "assistant_message":
-      return `Agent · ${event.text}`;
+      return `Agent · ${compactMarkdownText(event.text)}`;
     case "tool_started":
       return `${toolLabel(event.name)} · ${summarizeArguments(event.name, event.arguments)}`;
     case "tool_finished":
       return `${toolLabel(event.name)}${event.result.isError ? "失败" : "完成"} · ${event.durationMs} ms`;
     case "run_completed":
-      return `任务完成 · ${event.summary}`;
+      return `任务完成 · ${compactMarkdownText(event.summary)}`;
     case "run_cancelled":
       return `任务已停止 · 共执行 ${event.steps} 步`;
     case "run_failed":
