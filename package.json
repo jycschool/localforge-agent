@@ -14,7 +14,8 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "verify": "pnpm run check && pnpm test && pnpm run build",
-    "verify:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-delivery.ps1"
+    "verify:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-delivery.ps1",
+    "package:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-delivery.ps1"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

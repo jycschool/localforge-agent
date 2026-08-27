@@ -36,6 +36,8 @@ pnpm start
 
 开发冻结前可运行 `pnpm run verify` 完成类型检查、64 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
+录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
+
 启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址、模型名称和 API Key。右侧的 `Skill` 用于选择项目工作方式，`Memory` 用于保存不进入仓库的长期上下文，然后即可输入任务。也可以先执行 `pnpm build`，只生成桌面程序的开发构建。
 
 ModelScope 免费 API 的账号绑定条件和调用额度可能调整，请以控制台当日提示为准。Token 只保存在操作系统安全存储中；切换 API 服务时，LocalForge 不会把原服务的 Key 发送到新地址。
