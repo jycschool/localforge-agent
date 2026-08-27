@@ -1,0 +1,584 @@
+import type { AgentEvent, CommandApprovalRequest } from "../core/protocol";
+import type {
+  ChangedFileSnapshot,
+  DesktopApi,
+  ProjectSnapshot,
+  PublicSettings,
+} from "../desktop/contracts";
+
+declare global {
+  interface Window {
+    localForge: DesktopApi;
+  }
+}
+
+interface TreeNode {
+  name: string;
+  directories: Map<string, TreeNode>;
+  files: string[];
+}
+
+const api = window.localForge;
+let project: ProjectSnapshot | null = null;
+let selectedFile: string | null = null;
+let changes: ChangedFileSnapshot[] = [];
+let currentSettings: PublicSettings | null = null;
+let activeApproval: CommandApprovalRequest | null = null;
+let approvalAnswered = false;
+let toastTimer: number | undefined;
+
+const openProjectButton = element<HTMLButtonElement>("open-project");
+const welcomeOpenProjectButton = element<HTMLButtonElement>("welcome-open-project");
+const refreshProjectButton = element<HTMLButtonElement>("refresh-project");
+const projectName = element<HTMLElement>("project-name");
+const projectPath = element<HTMLElement>("project-path");
+const fileTree = element<HTMLElement>("file-tree");
+const changeList = element<HTMLElement>("change-list");
+const changeCount = element<HTMLElement>("change-count");
+const previewTitle = element<HTMLElement>("preview-title");
+const previewMeta = element<HTMLElement>("preview-meta");
+const previewMode = element<HTMLElement>("preview-mode");
+const previewContent = element<HTMLElement>("preview-content");
+const outputLog = element<HTMLElement>("output-log");
+const clearOutputButton = element<HTMLButtonElement>("clear-output");
+const timeline = element<HTMLElement>("timeline");
+const runStatus = element<HTMLElement>("run-status");
+const stopRunButton = element<HTMLButtonElement>("stop-run");
+const taskForm = element<HTMLFormElement>("task-form");
+const taskInput = element<HTMLTextAreaElement>("task-input");
+const startRunButton = element<HTMLButtonElement>("start-run");
+const selectedContext = element<HTMLElement>("selected-context");
+const settingsButton = element<HTMLButtonElement>("settings-button");
+const modelStatus = element<HTMLElement>("model-status");
+const settingsDialog = element<HTMLDialogElement>("settings-dialog");
+const settingsForm = element<HTMLFormElement>("settings-form");
+const apiBaseUrlInput = element<HTMLInputElement>("api-base-url");
+const modelNameInput = element<HTMLInputElement>("model-name");
+const apiKeyInput = element<HTMLInputElement>("api-key");
+const apiKeyHelp = element<HTMLElement>("api-key-help");
+const maxStepsInput = element<HTMLInputElement>("max-steps");
+const commandTimeoutInput = element<HTMLInputElement>("command-timeout");
+const settingsError = element<HTMLElement>("settings-error");
+const approvalDialog = element<HTMLDialogElement>("approval-dialog");
+const approvalReason = element<HTMLElement>("approval-reason");
+const approvalCommand = element<HTMLElement>("approval-command");
+const approvalCwd = element<HTMLElement>("approval-cwd");
+const approveCommandButton = element<HTMLButtonElement>("approve-command");
+const rejectCommandButton = element<HTMLButtonElement>("reject-command");
+const toast = element<HTMLElement>("toast");
+
+openProjectButton.addEventListener("click", () => void selectProject());
+welcomeOpenProjectButton.addEventListener("click", () => void selectProject());
+refreshProjectButton.addEventListener("click", () => void refreshProject());
+clearOutputButton.addEventListener("click", () => {
+  outputLog.textContent = "等待 Agent 运行命令或工具…";
+});
+settingsButton.addEventListener("click", () => void openSettings());
+stopRunButton.addEventListener("click", () => void stopRun());
+taskForm.addEventListener("submit", (event) => void startRun(event));
+settingsForm.addEventListener("submit", (event) => void saveSettings(event));
+approveCommandButton.addEventListener("click", (event) => void answerApproval(event, true));
+rejectCommandButton.addEventListener("click", (event) => void answerApproval(event, false));
+approvalDialog.addEventListener("close", () => {
+  if (activeApproval && !approvalAnswered) {
+    void api.answerApproval(activeApproval.id, false);
+  }
+  activeApproval = null;
+  approvalAnswered = false;
+});
+
+api.onAgentEvent(handleAgentEvent);
+api.onApprovalRequested(showApproval);
+api.onChangesUpdated((nextChanges) => {
+  changes = nextChanges;
+  renderChanges();
+  void refreshProject(false);
+});
+
+void initialize();
+
+async function initialize(): Promise<void> {
+  try {
+    currentSettings = await api.getSettings();
+    renderModelStatus();
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+async function selectProject(): Promise<void> {
+  try {
+    const selected = await api.selectProject();
+    if (!selected) {
+      return;
+    }
+    project = selected;
+    selectedFile = null;
+    changes = [];
+    renderProject();
+    renderChanges();
+    showProjectWelcome();
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+async function refreshProject(showMessage = true): Promise<void> {
+  try {
+    const refreshed = await api.refreshProject();
+    if (!refreshed) {
+      if (showMessage) {
+        notify("请先打开一个项目。");
+      }
+      return;
+    }
+    project = refreshed;
+    renderProject();
+    if (showMessage) {
+      notify("项目结构已刷新。");
+    }
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+function renderProject(): void {
+  if (!project) {
+    return;
+  }
+  projectName.textContent = project.name;
+  projectPath.textContent = project.rootPath;
+  fileTree.replaceChildren();
+  const root: TreeNode = { name: project.name, directories: new Map(), files: [] };
+  for (const file of project.files) {
+    insertFile(root, file.relativePath);
+  }
+  fileTree.append(renderTree(root, 0));
+  if (project.limited) {
+    const note = document.createElement("p");
+    note.className = "empty-copy";
+    note.textContent = "文件较多，仅显示前 2,000 个。";
+    fileTree.append(note);
+  }
+}
+
+function insertFile(root: TreeNode, relativePath: string): void {
+  const parts = relativePath.split("/");
+  const fileName = parts.pop();
+  if (!fileName) {
+    return;
+  }
+  let node = root;
+  for (const directory of parts) {
+    let child = node.directories.get(directory);
+    if (!child) {
+      child = { name: directory, directories: new Map(), files: [] };
+      node.directories.set(directory, child);
+    }
+    node = child;
+  }
+  node.files.push(relativePath);
+}
+
+function renderTree(node: TreeNode, depth: number): HTMLUListElement {
+  const list = document.createElement("ul");
+  list.className = "tree-list";
+  for (const directory of Array.from(node.directories.values()).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )) {
+    const item = document.createElement("li");
+    const details = document.createElement("details");
+    details.className = "tree-directory";
+    details.open = depth === 0;
+    const summary = document.createElement("summary");
+    summary.textContent = directory.name;
+    details.append(summary, renderTree(directory, depth + 1));
+    item.append(details);
+    list.append(item);
+  }
+  for (const relativePath of node.files.sort((a, b) => a.localeCompare(b))) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `tree-file${selectedFile === relativePath ? " selected" : ""}`;
+    button.textContent = relativePath.split("/").pop() ?? relativePath;
+    button.dataset.path = relativePath;
+    button.addEventListener("click", () => void openFile(relativePath));
+    item.append(button);
+    list.append(item);
+  }
+  return list;
+}
+
+async function openFile(relativePath: string): Promise<void> {
+  try {
+    const file = await api.readFile(relativePath);
+    selectedFile = file.relativePath;
+    previewTitle.textContent = file.relativePath;
+    previewMeta.textContent = `${file.language} · ${formatBytes(file.size)} · 只读`;
+    previewMode.textContent = "FILE";
+    const pre = document.createElement("pre");
+    pre.className = "code-view";
+    pre.textContent = file.content;
+    previewContent.replaceChildren(pre);
+    selectedContext.textContent = `上下文：${file.relativePath}`;
+    renderProject();
+    renderChanges();
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+function renderChanges(): void {
+  changeCount.textContent = String(changes.length);
+  changeList.replaceChildren();
+  if (changes.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "Agent 修改的文件会集中显示。";
+    changeList.append(empty);
+    return;
+  }
+  for (const change of changes) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "change-file";
+    button.textContent = change.relativePath;
+    button.addEventListener("click", () => showDiff(change));
+    changeList.append(button);
+  }
+}
+
+function showDiff(change: ChangedFileSnapshot): void {
+  selectedFile = change.relativePath;
+  previewTitle.textContent = change.relativePath;
+  previewMeta.textContent = change.originalContent === null ? "新文件 · 只读差异" : "修改前 / 修改后";
+  previewMode.textContent = "DIFF";
+  const wrapper = document.createElement("div");
+  wrapper.className = "diff-view";
+  wrapper.append(
+    diffColumn("修改前", change.originalContent ?? "（新文件）"),
+    diffColumn("修改后", change.currentContent),
+  );
+  previewContent.replaceChildren(wrapper);
+  selectedContext.textContent = `上下文：${change.relativePath}`;
+}
+
+function diffColumn(label: string, content: string): HTMLElement {
+  const column = document.createElement("section");
+  column.className = "diff-column";
+  const header = document.createElement("header");
+  header.textContent = label;
+  const pre = document.createElement("pre");
+  pre.textContent = content;
+  column.append(header, pre);
+  return column;
+}
+
+function showProjectWelcome(): void {
+  previewTitle.textContent = project ? project.name : "代码预览";
+  previewMeta.textContent = project ? `${project.files.length} 个文件` : "只读";
+  previewMode.textContent = "PROJECT";
+  const welcome = document.createElement("div");
+  welcome.className = "welcome-state";
+  const mark = document.createElement("div");
+  mark.className = "welcome-mark";
+  mark.textContent = "LF";
+  const heading = document.createElement("h1");
+  heading.textContent = project ? `${project.name} 已就绪` : "从项目结构开始";
+  const copy = document.createElement("p");
+  copy.textContent = "从左侧选择文件查看代码，或直接在右侧描述希望 Agent 完成的任务。";
+  welcome.append(mark, heading, copy);
+  previewContent.replaceChildren(welcome);
+  selectedContext.textContent = "未选择文件";
+}
+
+async function openSettings(): Promise<void> {
+  try {
+    currentSettings = await api.getSettings();
+    apiBaseUrlInput.value = currentSettings.apiBaseUrl;
+    modelNameInput.value = currentSettings.model;
+    apiKeyInput.value = "";
+    maxStepsInput.value = String(currentSettings.maxSteps);
+    commandTimeoutInput.value = String(Math.round(currentSettings.commandTimeoutMs / 1000));
+    apiKeyHelp.textContent = currentSettings.hasApiKey
+      ? `已有 Key（来源：${currentSettings.apiKeySource === "environment" ? "环境变量" : "系统加密存储"}）`
+      : "尚未保存 Key。保存时会使用系统安全存储加密。";
+    settingsError.textContent = "";
+    settingsDialog.showModal();
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+async function saveSettings(event: SubmitEvent): Promise<void> {
+  const submitter = event.submitter as HTMLButtonElement | null;
+  if (submitter?.value === "cancel") {
+    return;
+  }
+  event.preventDefault();
+  if (!settingsForm.reportValidity()) {
+    return;
+  }
+  try {
+    settingsError.textContent = "";
+    currentSettings = await api.saveSettings({
+      apiBaseUrl: apiBaseUrlInput.value,
+      model: modelNameInput.value,
+      apiKey: apiKeyInput.value || undefined,
+      maxSteps: Number(maxStepsInput.value),
+      commandTimeoutMs: Number(commandTimeoutInput.value) * 1000,
+      maxOutputChars: currentSettings?.maxOutputChars ?? 20_000,
+    });
+    settingsDialog.close();
+    renderModelStatus();
+    notify("模型设置已保存。");
+  } catch (error) {
+    settingsError.textContent = errorMessage(error);
+  }
+}
+
+function renderModelStatus(): void {
+  if (!currentSettings) {
+    return;
+  }
+  modelStatus.classList.toggle("ready", currentSettings.hasApiKey);
+  modelStatus.lastChild!.textContent = currentSettings.hasApiKey
+    ? ` ${currentSettings.model}`
+    : " 未配置模型";
+}
+
+async function startRun(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  const task = taskInput.value.trim();
+  if (!task) {
+    notify("请输入任务说明。");
+    taskInput.focus();
+    return;
+  }
+  try {
+    const result = await api.startRun({ task, selectedFile: selectedFile ?? undefined });
+    if (!result.started) {
+      notify(result.message ?? "任务未能启动。");
+      return;
+    }
+    setRunning(true);
+    taskInput.value = "";
+    clearTimeline();
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+async function stopRun(): Promise<void> {
+  try {
+    if (await api.stopRun()) {
+      stopRunButton.disabled = true;
+      setRunStatus("正在停止", "idle");
+    }
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+function handleAgentEvent(event: AgentEvent): void {
+  switch (event.type) {
+    case "run_started":
+      setRunning(true);
+      appendTimeline("开始任务", event.task, "active");
+      break;
+    case "model_started":
+      appendTimeline(`第 ${event.step} 步`, "模型正在决定下一项操作…", "active");
+      break;
+    case "assistant_message":
+      appendTimeline("Agent", event.text, "success");
+      break;
+    case "tool_started":
+      appendTimeline(
+        toolLabel(event.name),
+        summarizeArguments(event.name, event.arguments),
+        "active",
+      );
+      break;
+    case "tool_finished":
+      handleToolOutput(event.name, event.result.content);
+      appendTimeline(
+        event.result.isError ? `${toolLabel(event.name)}失败` : `${toolLabel(event.name)}完成`,
+        `${event.durationMs} ms`,
+        event.result.isError ? "error" : "success",
+      );
+      break;
+    case "run_completed":
+      appendTimeline("任务完成", event.summary, "success");
+      setRunning(false);
+      break;
+    case "run_cancelled":
+      appendTimeline("任务已停止", `共执行 ${event.steps} 步`, "error");
+      setRunning(false);
+      break;
+    case "run_failed":
+      appendTimeline("任务失败", event.message, "error");
+      setRunning(false, true);
+      break;
+  }
+}
+
+function handleToolOutput(toolName: string, raw: string): void {
+  let value: unknown = raw;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    // Keep non-JSON tool output readable.
+  }
+  if (toolName === "run_command" && isRecord(value)) {
+    const command = typeof value.command === "string" ? `$ ${value.command}\n` : "";
+    const stdout = typeof value.stdout === "string" ? value.stdout : "";
+    const stderr = typeof value.stderr === "string" ? value.stderr : "";
+    appendOutput(`${command}${stdout}${stderr}`.trim());
+    return;
+  }
+  appendOutput(`${toolLabel(toolName)}: ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`);
+}
+
+function appendTimeline(
+  title: string,
+  detail: string,
+  state: "active" | "success" | "error",
+): void {
+  document.getElementById("timeline-empty")?.remove();
+  const item = document.createElement("article");
+  item.className = `timeline-item ${state}`;
+  const dot = document.createElement("span");
+  dot.className = "timeline-dot";
+  dot.textContent = state === "success" ? "✓" : state === "error" ? "!" : "·";
+  const body = document.createElement("div");
+  body.className = "timeline-body";
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const copy = document.createElement(detail.includes("\n") ? "pre" : "p");
+  copy.textContent = detail;
+  body.append(heading, copy);
+  item.append(dot, body);
+  timeline.append(item);
+  timeline.scrollTop = timeline.scrollHeight;
+}
+
+function clearTimeline(): void {
+  timeline.replaceChildren();
+}
+
+function appendOutput(text: string): void {
+  if (!text) {
+    return;
+  }
+  if (outputLog.textContent === "等待 Agent 运行命令或工具…") {
+    outputLog.textContent = "";
+  }
+  outputLog.textContent = `${outputLog.textContent ?? ""}${outputLog.textContent ? "\n\n" : ""}${text}`;
+  outputLog.scrollTop = outputLog.scrollHeight;
+}
+
+function setRunning(isRunning: boolean, failed = false): void {
+  stopRunButton.disabled = !isRunning;
+  startRunButton.disabled = isRunning;
+  openProjectButton.disabled = isRunning;
+  setRunStatus(isRunning ? "运行中" : failed ? "出错" : "待命", isRunning ? "running" : failed ? "error" : "idle");
+}
+
+function setRunStatus(label: string, state: "running" | "error" | "idle"): void {
+  runStatus.className = `run-status ${state}`;
+  const dot = document.createElement("span");
+  runStatus.replaceChildren(dot, document.createTextNode(` ${label}`));
+}
+
+function showApproval(request: CommandApprovalRequest): void {
+  activeApproval = request;
+  approvalAnswered = false;
+  approvalReason.textContent = request.reason;
+  approvalCommand.textContent = request.command;
+  approvalCwd.textContent = `运行目录：${request.cwd}`;
+  appendTimeline("等待命令批准", request.command, "active");
+  approvalDialog.showModal();
+}
+
+async function answerApproval(event: MouseEvent, approved: boolean): Promise<void> {
+  event.preventDefault();
+  if (!activeApproval) {
+    approvalDialog.close();
+    return;
+  }
+  approvalAnswered = true;
+  const request = activeApproval;
+  activeApproval = null;
+  await api.answerApproval(request.id, approved);
+  approvalDialog.close();
+  appendTimeline(approved ? "命令已允许" : "命令已拒绝", request.command, approved ? "success" : "error");
+}
+
+function toolLabel(name: string): string {
+  const labels: Record<string, string> = {
+    list_files: "查看项目结构",
+    search_text: "搜索代码",
+    read_file: "读取文件",
+    replace_in_file: "修改文件",
+    write_file: "写入文件",
+    run_command: "运行命令",
+  };
+  return labels[name] ?? name;
+}
+
+function summarizeArguments(name: string, args: Record<string, unknown>): string {
+  if (typeof args.path === "string") {
+    return args.path;
+  }
+  if (name === "search_text" && typeof args.query === "string") {
+    return `“${args.query}”`;
+  }
+  if (name === "run_command" && typeof args.command === "string") {
+    return args.command;
+  }
+  if (name === "list_files" && typeof args.glob === "string") {
+    return args.glob;
+  }
+  return Object.keys(args).length ? JSON.stringify(args) : "准备执行";
+}
+
+function notify(message: string): void {
+  window.clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.classList.add("visible");
+  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 3_200);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1_024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1_048_576) {
+    return `${(bytes / 1_024).toFixed(1)} KB`;
+  }
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.replace(/^Error invoking remote method '[^']+': Error: /, "");
+  }
+  return String(error);
+}
+
+function element<T extends HTMLElement>(id: string): T {
+  const value = document.getElementById(id);
+  if (!value) {
+    throw new Error(`Missing UI element: ${id}`);
+  }
+  return value as T;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

@@ -1,94 +1,22 @@
 {
   "name": "localforge-agent",
   "displayName": "LocalForge",
-  "description": "A transparent, local-first coding agent for Visual Studio Code.",
+  "description": "A standalone, transparent and local-first coding agent desktop app.",
   "version": "0.1.0",
   "private": true,
   "publisher": "localforge",
   "license": "UNLICENSED",
-  "engines": {
-    "vscode": "^1.95.0"
-  },
-  "categories": [
-    "Other",
-    "Machine Learning"
-  ],
-  "activationEvents": [
-    "onView:localForge.agentView",
-    "onCommand:localForge.setApiKey"
-  ],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "localForge",
-          "title": "LocalForge",
-          "icon": "media/localforge.svg"
-        }
-      ]
-    },
-    "views": {
-      "localForge": [
-        {
-          "id": "localForge.agentView",
-          "name": "Agent",
-          "type": "webview"
-        }
-      ]
-    },
-    "commands": [
-      {
-        "command": "localForge.setApiKey",
-        "title": "LocalForge: Set API Key"
-      }
-    ],
-    "configuration": {
-      "title": "LocalForge",
-      "properties": {
-        "localForge.apiBaseUrl": {
-          "type": "string",
-          "default": "https://api.openai.com/v1",
-          "description": "OpenAI-compatible API base URL."
-        },
-        "localForge.model": {
-          "type": "string",
-          "default": "gpt-5.1-codex",
-          "description": "Model name sent to the configured API."
-        },
-        "localForge.maxSteps": {
-          "type": "number",
-          "default": 20,
-          "minimum": 1,
-          "maximum": 50,
-          "description": "Maximum model turns in one agent run."
-        },
-        "localForge.commandTimeoutMs": {
-          "type": "number",
-          "default": 120000,
-          "minimum": 1000,
-          "maximum": 600000,
-          "description": "Timeout for local commands in milliseconds."
-        },
-        "localForge.maxOutputChars": {
-          "type": "number",
-          "default": 12000,
-          "minimum": 1000,
-          "maximum": 50000,
-          "description": "Maximum characters retained from one tool result."
-        }
-      }
-    }
-  },
+  "main": "./dist/main.js",
   "scripts": {
     "build": "node esbuild.mjs",
+    "start": "pnpm run build && electron .",
     "dev": "node esbuild.mjs --watch",
     "check": "tsc --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
-    "@types/vscode": "^1.95.0",
+    "electron": "^44.0.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0"

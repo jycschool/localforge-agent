@@ -24,7 +24,23 @@ export interface WorkspaceToolOptions {
   maxOutputChars: number;
 }
 
-const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "coverage", ".vscode-test"]);
+const IGNORED_DIRECTORIES = new Set([
+  ".git",
+  ".idea",
+  ".mypy_cache",
+  ".next",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".venv",
+  ".vscode-test",
+  "__pycache__",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+  "target",
+  "venv",
+]);
 
 export async function createWorkspaceTools(options: WorkspaceToolOptions): Promise<AgentTool[]> {
   const rootRealPath = await realpath(options.rootPath);

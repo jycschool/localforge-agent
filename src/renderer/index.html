@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LocalForge</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand" aria-label="LocalForge">
+          <span class="brand-mark">LF</span>
+          <span>LocalForge</span>
+          <span class="product-label">DESKTOP AGENT</span>
+        </div>
+        <div class="project-switcher">
+          <button id="open-project" class="button button-secondary" type="button">打开项目</button>
+          <div class="project-copy">
+            <strong id="project-name">尚未打开项目</strong>
+            <span id="project-path">选择本地目录后显示代码结构</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="model-status" class="model-status"><span></span> 未配置模型</span>
+          <button id="settings-button" class="button button-ghost" type="button">设置</button>
+        </div>
+      </header>
+
+      <div class="workbench">
+        <aside class="project-panel" aria-label="项目结构">
+          <section class="panel-section file-section">
+            <div class="panel-heading">
+              <h2>项目结构</h2>
+              <button id="refresh-project" class="text-button" type="button">刷新</button>
+            </div>
+            <div id="file-tree" class="file-tree">
+              <p class="empty-copy">打开项目后，这里会显示目录和文件。</p>
+            </div>
+          </section>
+          <section class="panel-section changes-section">
+            <div class="panel-heading">
+              <h2>本次变更</h2>
+              <span id="change-count" class="count">0</span>
+            </div>
+            <div id="change-list" class="change-list">
+              <p class="empty-copy">Agent 修改的文件会集中显示。</p>
+            </div>
+          </section>
+        </aside>
+
+        <main class="preview-panel">
+          <header class="preview-header">
+            <div>
+              <strong id="preview-title">代码预览</strong>
+              <span id="preview-meta">只读</span>
+            </div>
+            <span id="preview-mode" class="preview-mode">FILE</span>
+          </header>
+          <section id="preview-content" class="preview-content" aria-live="polite">
+            <div class="welcome-state">
+              <div class="welcome-mark">LF</div>
+              <h1>从项目结构开始</h1>
+              <p>打开一个本地项目，选择文件查看代码，再把任务交给右侧 Agent。</p>
+              <button id="welcome-open-project" class="button button-primary" type="button">打开本地项目</button>
+            </div>
+          </section>
+          <section class="output-panel" aria-label="运行输出">
+            <header>
+              <strong>运行输出</strong>
+              <button id="clear-output" class="text-button" type="button">清空</button>
+            </header>
+            <pre id="output-log">等待 Agent 运行命令或工具…</pre>
+          </section>
+        </main>
+
+        <aside class="agent-panel" aria-label="Agent 任务">
+          <header class="agent-header">
+            <div>
+              <h2>Agent 任务</h2>
+              <span id="run-status" class="run-status idle"><span></span> 待命</span>
+            </div>
+            <button id="stop-run" class="button button-danger" type="button" disabled>停止</button>
+          </header>
+          <section id="timeline" class="timeline" aria-live="polite">
+            <div id="timeline-empty" class="timeline-empty">
+              <strong>过程会完整留在这里</strong>
+              <p>模型思考步骤、工具调用、修改结果和命令审批都可见。</p>
+            </div>
+          </section>
+          <form id="task-form" class="composer">
+            <label for="task-input">给 Agent 一个任务</label>
+            <textarea
+              id="task-input"
+              rows="4"
+              placeholder="例如：检查登录模块，修复空用户名导致的异常，并运行相关测试。"
+            ></textarea>
+            <div class="composer-footer">
+              <span id="selected-context">未选择文件</span>
+              <button id="start-run" class="button button-primary" type="submit">开始任务</button>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </div>
+
+    <dialog id="settings-dialog" class="modal">
+      <form id="settings-form" method="dialog">
+        <header>
+          <div>
+            <h2>模型设置</h2>
+            <p>支持 OpenAI 兼容的 Chat Completions 接口。</p>
+          </div>
+          <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
+        </header>
+        <label>
+          API 地址
+          <input id="api-base-url" type="url" required />
+        </label>
+        <label>
+          模型名称
+          <input id="model-name" type="text" required />
+        </label>
+        <label>
+          API Key
+          <input id="api-key" type="password" placeholder="留空表示保留已保存的 Key" />
+          <small id="api-key-help"></small>
+        </label>
+        <div class="settings-grid">
+          <label>
+            最大步骤
+            <input id="max-steps" type="number" min="1" max="50" required />
+          </label>
+          <label>
+            命令超时（秒）
+            <input id="command-timeout" type="number" min="1" max="600" required />
+          </label>
+        </div>
+        <footer>
+          <span id="settings-error" class="form-error" role="alert"></span>
+          <div>
+            <button class="button button-secondary" value="cancel" type="submit">取消</button>
+            <button id="save-settings" class="button button-primary" value="default" type="submit">保存设置</button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="approval-dialog" class="modal approval-modal">
+      <form method="dialog">
+        <header>
+          <div>
+            <span class="approval-label">需要你的批准</span>
+            <h2>允许执行这条命令吗？</h2>
+          </div>
+        </header>
+        <p id="approval-reason"></p>
+        <pre id="approval-command"></pre>
+        <small id="approval-cwd"></small>
+        <footer>
+          <span>拒绝后 Agent 会收到明确结果。</span>
+          <div>
+            <button id="reject-command" class="button button-secondary" value="cancel" type="submit">拒绝</button>
+            <button id="approve-command" class="button button-primary" value="default" type="submit">允许执行</button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

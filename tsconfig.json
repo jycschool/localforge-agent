@@ -10,8 +10,7 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node", "vscode", "vitest/globals"]
+    "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "esbuild.mjs"]
 }
-
