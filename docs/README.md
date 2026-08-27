@@ -18,6 +18,7 @@
 | [12-demo-video-script.md](12-demo-video-script.md) | 两分钟演示项目、分镜、台词与录制检查 | 待彩排 |
 | [13-assessment-compliance.md](13-assessment-compliance.md) | PDF 考核原文到实现、测试和交付证据的逐条映射 | 执行中 |
 | [14-real-model-validation.md](14-real-model-validation.md) | ModelScope 真实模型读、改、测闭环、重复运行与限流记录 | 已完成三轮 |
+| [15-interview-defense.md](15-interview-defense.md) | 常见追问、可辩护回答、源码带看顺序与表述边界 | 已完成 |
 | [decisions/0001-vscode-extension.md](decisions/0001-vscode-extension.md) | 初始 VS Code 形态决策 | 已被取代 |
 | [decisions/0002-standalone-desktop.md](decisions/0002-standalone-desktop.md) | 改为独立桌面 Agent 的决策 | 已接受 |
 
