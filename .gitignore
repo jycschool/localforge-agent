@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.vscode-test/
+*.vsix
+.env
+.env.*
+!.env.example
+tmp/
+推免考核题目学生版.pdf
+
