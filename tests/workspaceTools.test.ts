@@ -78,6 +78,27 @@ describe("workspace tools", () => {
     expect(tracker.list()[0]?.originalContent).toContain("value = 1");
   });
 
+  it("rejects oversized file reads, replacements, and writes", async () => {
+    const { tools, root } = await createFixture();
+    await writeFile(path.join(root, "large.txt"), "x".repeat(1_000_001), "utf8");
+
+    await expect(
+      tool(tools, "read_file").execute({ path: "large.txt" }, executionContext()),
+    ).rejects.toThrow("exceeds the 1 MB");
+    await expect(
+      tool(tools, "replace_in_file").execute(
+        { path: "large.txt", oldText: "x", newText: "y" },
+        executionContext(),
+      ),
+    ).rejects.toThrow("exceeds the 1 MB");
+    await expect(
+      tool(tools, "write_file").execute(
+        { path: "new-large.txt", content: "界".repeat(400_000) },
+        executionContext(),
+      ),
+    ).rejects.toThrow("exceeds the 1 MB");
+  });
+
   it("rejects workspace traversal", async () => {
     const { tools } = await createFixture();
     await expect(

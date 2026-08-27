@@ -42,6 +42,7 @@ const IGNORED_DIRECTORIES = new Set([
   "target",
   "venv",
 ]);
+const MAX_TOOL_FILE_BYTES = 1_000_000;
 
 export async function createWorkspaceTools(options: WorkspaceToolOptions): Promise<AgentTool[]> {
   const rootRealPath = await realpath(options.rootPath);
@@ -230,7 +231,7 @@ function createReadFileTool(resolver: WorkspacePathResolver, maxOutputChars: num
       if (endLine < startLine) {
         throw new Error("endLine must be greater than or equal to startLine.");
       }
-      const content = await readFile(target.absolutePath, "utf8");
+      const content = await readUtf8FileWithinLimit(target.absolutePath);
       const lines = content.split(/\r?\n/);
       const selected = lines
         .slice(startLine - 1, Math.min(endLine, lines.length))
@@ -270,7 +271,7 @@ function createReplaceFileTool(resolver: WorkspacePathResolver, tracker: ChangeT
       if (oldText.length === 0) {
         throw new Error("oldText cannot be empty.");
       }
-      const current = await readFile(target.absolutePath, "utf8");
+      const current = await readUtf8FileWithinLimit(target.absolutePath);
       const occurrences = current.split(oldText).length - 1;
       if (occurrences !== 1) {
         throw new Error(`Expected oldText exactly once, found ${occurrences} occurrences.`);
@@ -303,9 +304,12 @@ function createWriteFileTool(resolver: WorkspacePathResolver, tracker: ChangeTra
     async execute(argumentsValue) {
       const target = await resolver.writable(requiredString(argumentsValue, "path"));
       const content = requiredString(argumentsValue, "content", true);
+      if (Buffer.byteLength(content, "utf8") > MAX_TOOL_FILE_BYTES) {
+        throw new Error("File content exceeds the 1 MB workspace tool limit.");
+      }
       let original: string | null = null;
       try {
-        original = await readFile(target.absolutePath, "utf8");
+        original = await readUtf8FileWithinLimit(target.absolutePath);
       } catch (error) {
         if (!isMissingFileError(error)) {
           throw error;
@@ -560,6 +564,17 @@ function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) {
     throw new DOMException("The workspace traversal was aborted.", "AbortError");
   }
+}
+
+async function readUtf8FileWithinLimit(absolutePath: string): Promise<string> {
+  const info = await stat(absolutePath);
+  if (!info.isFile()) {
+    throw new Error("The workspace path is not a file.");
+  }
+  if (info.size > MAX_TOOL_FILE_BYTES) {
+    throw new Error("File exceeds the 1 MB workspace tool limit.");
+  }
+  return readFile(absolutePath, "utf8");
 }
 
 function globMatcher(pattern: string): (relativePath: string) => boolean {

@@ -34,7 +34,7 @@ pnpm test
 pnpm start
 ```
 
-开发冻结前可运行 `pnpm run verify` 完成类型检查、68 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+开发冻结前可运行 `pnpm run verify` 完成类型检查、69 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
 录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
 
