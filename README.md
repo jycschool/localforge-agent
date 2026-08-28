@@ -56,6 +56,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-short
 
 仓库同时配置了 Windows GitHub Actions 质量门禁：推送到 `main`、提交 Pull Request 或手动触发时，会在不注入真实模型 Token 的干净环境中安装锁定依赖，并依次执行类型检查、自动化测试、构建和交付检查。
 
+质量门禁通过后，`main` 和手动运行会继续生成保留 14 天的 Windows x64 可运行制品；推送 `v*` 标签时，同一份已验证制品会自动压缩并发布到 GitHub Releases。发布写权限只授予标签触发的 Release 作业，普通 CI 与制品构建保持只读。标签本身是人工发布门禁，例如 `git tag -s v0.1.0 -m "发布 v0.1.0"` 后推送该标签即可触发正式发布。
+
+本地需要生成不依赖项目目录和 `node_modules` 的 Windows 应用时，可运行：
+
+```powershell
+pnpm run package:win
+```
+
+输出位于 `release\LocalForge-win32-x64\LocalForge.exe`。这是免安装应用目录，尚未购买 Windows 代码签名证书，因此首次从网络下载时可能出现系统信誉提示；Git 提交的 SSH 签名不能替代可执行文件代码签名。
+
 录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
 
 启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址和 Model-Id。设置同时提供只读/工作区读写权限与快速/标准/深入响应档位；Agent 标题旁显示本次任务累计 Token，接口未返回 usage 时以 `≈` 标明本地估算。右侧的 `Skill` 可新建、编辑、删除和选择项目工作方式；`Memory` 可维护不进入仓库的长期上下文；“附件”会把明确选择的项目文本文件发送给当前模型服务。连续输入会自动保留同一会话上下文；点击“新会话”可从空白上下文开始，旧记录可从“历史”中切换、继续或整段删除。也可以先执行 `pnpm run build`，只生成桌面程序的开发构建。

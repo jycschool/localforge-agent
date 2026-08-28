@@ -28,7 +28,7 @@ try {
   Add-CheckResult ($readmeCharacterCount -le 1000) "README.txt is at most 1000 normalized characters (current: $readmeCharacterCount)"
 
   $forbiddenTracked = @(git ls-files | Where-Object {
-    $_ -match '(^|/)(\.env($|\.)|dist/|tmp/)' -or
+    $_ -match '(^|/)(\.env($|\.)|dist/|release/|tmp/)' -or
     $_ -match '\.(mp4|zip|pdf)$'
   })
   Add-CheckResult ($forbiddenTracked.Count -eq 0) "Git does not track env files, builds, PDFs, videos, or delivery zips"

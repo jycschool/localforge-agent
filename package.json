@@ -16,9 +16,11 @@
     "verify": "pnpm run check && pnpm test && pnpm run build",
     "verify:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-delivery.ps1",
     "shortcut:create": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
+    "package:win": "pnpm run build && node scripts/package-windows.mjs",
     "package:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-delivery.ps1"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "@types/node": "^22.15.0",
     "electron": "^44.0.0",
     "esbuild": "^0.25.0",

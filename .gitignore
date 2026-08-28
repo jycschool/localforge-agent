@@ -1,5 +1,6 @@
 node_modules/
 dist/
+release/
 coverage/
 .vscode-test/
 *.vsix
@@ -8,4 +9,3 @@ coverage/
 !.env.example
 tmp/
 推免考核题目学生版.pdf
-
