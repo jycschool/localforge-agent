@@ -30,7 +30,7 @@ import {
   serializeEditorContent,
   type LineEnding,
 } from "./features/manualEditor";
-import { setupColumnResizing } from "./features/panelResizing";
+import { setupPanelResizing } from "./features/panelResizing";
 import { rankQuickOpen, type QuickOpenMatch } from "./features/quickOpen";
 import { clearTaskDraft, loadTaskDraft, saveTaskDraft } from "./features/taskDraft";
 import { fileVisualFor } from "./shared/fileIcons";
@@ -269,6 +269,14 @@ const toast = element<HTMLElement>("toast");
 const workbench = element<HTMLElement>("workbench");
 const leftResizer = element<HTMLElement>("left-resizer");
 const rightResizer = element<HTMLElement>("right-resizer");
+const projectPanel = document.querySelector<HTMLElement>(".project-panel");
+const previewPanel = document.querySelector<HTMLElement>(".preview-panel");
+const projectRowResizer = element<HTMLElement>("project-row-resizer");
+const previewRowResizer = element<HTMLElement>("preview-row-resizer");
+
+if (!projectPanel || !previewPanel) {
+  throw new Error("找不到可调整高度的主面板。");
+}
 
 openProjectButton.addEventListener("click", () => void selectProject());
 welcomeOpenProjectButton.addEventListener("click", () => void selectProject());
@@ -355,7 +363,15 @@ window.addEventListener("beforeunload", (event) => {
   }
 });
 
-setupColumnResizing({ workbench, leftResizer, rightResizer });
+setupPanelResizing({
+  workbench,
+  leftResizer,
+  rightResizer,
+  projectPanel,
+  projectRowResizer,
+  previewPanel,
+  previewRowResizer,
+});
 
 api.onAgentEvent(handleAgentEvent);
 api.onApprovalRequested(showApproval);
