@@ -15,7 +15,9 @@ const electronMocks = vi.hoisted(() => ({
 }));
 
 const projectMocks = vi.hoisted(() => ({
+  createProjectFile: vi.fn(),
   readProjectFile: vi.fn(),
+  saveProjectFile: vi.fn(),
   scanProject: vi.fn(),
 }));
 
@@ -51,6 +53,21 @@ beforeEach(() => {
     content: "demo",
     size: 4,
     language: "Markdown",
+    contentHash: "a".repeat(64),
+  });
+  projectMocks.saveProjectFile.mockResolvedValue({
+    relativePath: "README.md",
+    content: "saved",
+    size: 5,
+    language: "Markdown",
+    contentHash: "b".repeat(64),
+  });
+  projectMocks.createProjectFile.mockResolvedValue({
+    relativePath: "notes.md",
+    content: "new",
+    size: 3,
+    language: "Markdown",
+    contentHash: "c".repeat(64),
   });
 });
 
@@ -59,8 +76,8 @@ describe("main-process IPC boundary", () => {
     await registerWithStores();
 
     const registered = electronMocks.handle.mock.calls.map((call) => call[0]);
-    expect(registered).toHaveLength(31);
-    expect(new Set(registered).size).toBe(31);
+    expect(registered).toHaveLength(33);
+    expect(new Set(registered).size).toBe(33);
     expect(registered).not.toContain(IPC_CHANNELS.agentEvent);
     expect(registered).not.toContain(IPC_CHANNELS.approvalRequested);
     expect(registered).not.toContain(IPC_CHANNELS.changesUpdated);
@@ -122,6 +139,38 @@ describe("main-process IPC boundary", () => {
     expect(projectMocks.readProjectFile).toHaveBeenCalledWith(
       "C:\\workspace\\demo",
       "README.md",
+    );
+
+    await expect(invoke(IPC_CHANNELS.saveFile, null)).rejects.toThrow(
+      "文件保存请求无效",
+    );
+    await expect(
+      invoke(IPC_CHANNELS.saveFile, { relativePath: "README.md", content: 7 }),
+    ).rejects.toThrow("文件保存请求无效");
+    await expect(
+      invoke(IPC_CHANNELS.saveFile, {
+        relativePath: "README.md",
+        content: "saved",
+        expectedHash: "a".repeat(64),
+      }),
+    ).resolves.toMatchObject({ file: { content: "saved" } });
+    expect(projectMocks.saveProjectFile).toHaveBeenCalledWith(
+      "C:\\workspace\\demo",
+      "README.md",
+      "saved",
+      "a".repeat(64),
+    );
+
+    await expect(
+      invoke(IPC_CHANNELS.createFile, { relativePath: 7, content: "" }),
+    ).rejects.toThrow("新建文件请求无效");
+    await expect(
+      invoke(IPC_CHANNELS.createFile, { relativePath: "notes.md", content: "new" }),
+    ).resolves.toMatchObject({ file: { relativePath: "notes.md" } });
+    expect(projectMocks.createProjectFile).toHaveBeenCalledWith(
+      "C:\\workspace\\demo",
+      "notes.md",
+      "new",
     );
 
     await expect(invoke(IPC_CHANNELS.saveProjectMemory, null)).rejects.toThrow(

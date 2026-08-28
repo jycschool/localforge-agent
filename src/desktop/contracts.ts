@@ -11,6 +11,8 @@ export const IPC_CHANNELS = {
   restoreProject: "project:restore-last",
   refreshProject: "project:refresh",
   readFile: "project:read-file",
+  saveFile: "project:save-file",
+  createFile: "project:create-file",
   selectAttachments: "project:select-attachments",
   getProjectContext: "project:get-context",
   getProjectSkill: "project:get-skill",
@@ -58,6 +60,18 @@ export interface FileSnapshot {
   content: string;
   size: number;
   language: string;
+  contentHash: string;
+}
+
+export interface ManualFileSaveRequest {
+  relativePath: string;
+  content: string;
+  expectedHash: string;
+}
+
+export interface ManualFileCreateRequest {
+  relativePath: string;
+  content: string;
 }
 
 export interface ProjectSkill {
@@ -184,6 +198,11 @@ export interface RestoreChangedFilesResult {
   changes: ChangedFileSnapshot[];
 }
 
+export interface ManualFileMutationResult {
+  file: FileSnapshot;
+  changes: ChangedFileSnapshot[];
+}
+
 export interface FileExportResult {
   saved: boolean;
   filePath?: string;
@@ -236,6 +255,8 @@ export interface DesktopApi {
   restoreProject(): Promise<ProjectSnapshot | null>;
   refreshProject(): Promise<ProjectSnapshot | null>;
   readFile(relativePath: string): Promise<FileSnapshot>;
+  saveFile(input: ManualFileSaveRequest): Promise<ManualFileMutationResult>;
+  createFile(input: ManualFileCreateRequest): Promise<ManualFileMutationResult>;
   selectAttachments(): Promise<ProjectFile[]>;
   getProjectContext(): Promise<ProjectContextSnapshot>;
   getProjectSkill(id: string): Promise<ProjectSkillDetail>;

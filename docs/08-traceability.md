@@ -27,6 +27,7 @@
 | FR-21 安全变更恢复 | `changeRestore.ts`、Diff/变更区恢复入口 | `changeRestore.test.ts` | 单文件恢复；外部改动冲突时明确拒绝 |
 | FR-22 Memory/任务证据携带 | Memory 导入导出 IPC、`runReport.ts` | ProjectContext/Preload/RunReport 测试 | 展示更新时间与预览，导出 Memory 和历史报告 |
 | FR-23 多模型配置切换 | ConfigStore v2、模型配置 IPC、顶栏切换和设置管理 | `configStore.test.ts`、`preload.test.ts`、`mainIpc.test.ts` | 新建第二配置、自检、顶栏切回并确认历史模型标记 |
+| FR-24 轻量手动编辑/新建 | ProjectService 摘要保存/排他新建、固定 IPC、Renderer 编辑状态 | `projectService.test.ts`、`manualEditor.test.ts`、`preload.test.ts`、`mainIpc.test.ts` | 打开 README 进入编辑后取消；检查新建入口与运行锁 |
 
 ## 非功能追踪
 
@@ -39,7 +40,9 @@
 | NFR-05 可靠 | 严格响应解析、结构化工具错误和持久化 run 状态 | ModelClient、AgentLoop、RunHistoryStore 测试 |
 | NFR-06 性能 | 目录过滤、完整轻量扫描、Agent 查询结果提前终止、单文件 1 MB 上限、附件正文 24k/64k 上限、目录懒渲染、UI 输出上限 | `projectService.test.ts`、`workspaceTools.test.ts`、`taskContext.test.ts`、大项目人工检查 |
 | NFR-07 可维护 | contracts、ModelClient、ToolRegistry 接口 | 模块依赖评审、类型检查 |
-| NFR-08 可测试 | 核心模块与 Preload/主进程 IPC/配置/工作区状态/快速打开/草稿/富文本/路径脱敏边界可隔离验证 | 当前 112 项自动化测试 |
+| NFR-08 可测试 | 核心模块与 Preload/主进程 IPC/配置/工作区状态/快速打开/草稿/富文本/路径脱敏边界可隔离验证 | 当前 118 项自动化测试 |
+| NFR-09 兼容 | Windows 优先的 Electron 桌面壳、PowerShell 启动/交付脚本 | Windows 构建、快捷方式和桌面启动检查 |
+| NFR-10 一致性 | 手动保存 SHA-256 乐观锁、ChangeTracker 归因隔离 | ProjectService/IPC 测试与桌面编辑检查 |
 
 ## 交付追踪
 
@@ -54,10 +57,10 @@
 | 阶段 | 输入基线 | 活动/实现证据 | 退出证据 | 状态 |
 | --- | --- | --- | --- | --- |
 | 可行性 | 考核题目、技术约束 | ADR-0001/0002、原型和仓库历史 | 独立桌面方向确定 | 已完成 |
-| 需求 | 产品目标和范围 | PRD、23 个 FR、9 个 NFR、15 个 UC | 需求可测试、范围外明确 | 已完成并受控 |
+| 需求 | 产品目标和范围 | PRD、24 个 FR、10 个 NFR、16 个 UC | 需求可测试、范围外明确 | 已完成并受控 |
 | 设计 | 需求/用例基线 | 总体设计、UI 原型、数据流、状态机和安全边界 | 模块和契约可映射到源码 | 已完成并受控 |
 | 编码 | 架构与接口 | Agent、ModelClient、工具、桌面服务、Renderer | 核心闭环实现，相关测试通过 | 核心完成 |
-| 验证 | 候选构建 | 112 项测试、真实模型、桌面检查、交付脚本 | 无阻塞缺陷、演示稳定 | 进行中 |
+| 验证 | 候选构建 | 118 项测试、真实模型、桌面检查、交付脚本 | 无阻塞缺陷、演示稳定 | 进行中 |
 | 发布 | 验证通过的提交 | 视频、README.txt、最终推送和压缩包 | 20:00 冻结并复核材料 | 待执行 |
 
 阶段门禁、工作量估算、效能指标和流水线设计统一见 [16-midterm-lifecycle-baseline.md](16-midterm-lifecycle-baseline.md)。该表追踪过程状态，不替代上方 FR/NFR 的实现追踪。

@@ -42,6 +42,8 @@ describe("preload DesktopApi", () => {
     await api.restoreProject();
     await api.refreshProject();
     await api.readFile("README.md");
+    await api.saveFile({ relativePath: "README.md", content: "saved", expectedHash: "abc" });
+    await api.createFile({ relativePath: "notes.md", content: "new" });
     await api.selectAttachments();
     await api.getProjectContext();
     await api.getProjectSkill(".localforge/skills/test.md");
@@ -77,6 +79,8 @@ describe("preload DesktopApi", () => {
       [IPC_CHANNELS.restoreProject],
       [IPC_CHANNELS.refreshProject],
       [IPC_CHANNELS.readFile, "README.md"],
+      [IPC_CHANNELS.saveFile, { relativePath: "README.md", content: "saved", expectedHash: "abc" }],
+      [IPC_CHANNELS.createFile, { relativePath: "notes.md", content: "new" }],
       [IPC_CHANNELS.selectAttachments],
       [IPC_CHANNELS.getProjectContext],
       [IPC_CHANNELS.getProjectSkill, ".localforge/skills/test.md"],

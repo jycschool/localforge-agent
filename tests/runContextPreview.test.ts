@@ -32,7 +32,7 @@ describe("run context preview", () => {
         contentChars: 12,
         content: "Review diff.",
       }],
-      attachments: [{ relativePath: "README.md", content: "Demo", size: 4, language: "Markdown" }],
+      attachments: [{ relativePath: "README.md", content: "Demo", size: 4, language: "Markdown", contentHash: "hash" }],
       previousMessages: [{ role: "user", content: "Earlier question" }],
       tools: [{
         schema: {

@@ -67,7 +67,7 @@ describe("task context", () => {
 });
 
 function snapshot(relativePath: string, language: string, content: string): FileSnapshot {
-  return { relativePath, language, content, size: content.length };
+  return { relativePath, language, content, size: content.length, contentHash: "hash" };
 }
 
 function count(value: string, needle: string): number {

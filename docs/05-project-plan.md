@@ -49,7 +49,7 @@
 
 ## 8. 当前控制点（2026-08-28）
 
-核心 Agent、独立桌面工作台、上下文管理、安全控制、多模型配置和真实 ModelScope 读改测闭环已经形成稳定里程碑并推送。当前质量口径为类型检查、构建、交付检查和 112 项自动化测试通过；真实模型证据为三轮修改成功、一轮只读成功和一次如实保留的远端限流失败。
+核心 Agent、独立桌面工作台、上下文管理、安全控制、多模型配置和真实 ModelScope 读改测闭环已经形成稳定里程碑。经明确批准，当前版本又加入不扩张为完整 IDE 的轻量手动编辑。当前质量口径为类型检查、构建和 118 项自动化测试通过；真实模型证据为三轮修改成功、一轮只读成功和一次如实保留的远端限流失败。
 
 本计划不再复制逐功能完成清单。实际完成项和验证过程以 [09-development-log.md](09-development-log.md) 为准，需求状态以 [08-traceability.md](08-traceability.md) 为准，当前尚未完成的工作只在 [10-optimization-roadmap.md](10-optimization-roadmap.md) 维护。剩余主要风险是确定性流水线、桌面回归、远端模型可用性、视频计时和最终材料，而不是核心 Agent 能否运行。
 
@@ -69,4 +69,4 @@
 
 中期使用 PERT 三点估算 `E = (O + 4M + P) / 6`，只估算当时尚未完成的工作，不反推没有可靠计时的历史工时。自动恢复、快速打开/行号和步骤耗尽恢复后来经明确批准进入范围并已完成；它们作为基线事实进入开发日志，不继续占用剩余待办。
 
-剩余范围只保留确定性流水线、系统回归、视频和交付。中期 WBS、假设和原始三点数据见 [16-midterm-lifecycle-baseline.md](16-midterm-lifecycle-baseline.md)，当前待办见 [10-optimization-roadmap.md](10-optimization-roadmap.md)。估算变化通过状态说明处理，不用重写历史数字伪装计划从未变化。
+本次轻量编辑作为用户批准的范围变更单独记录于 [17-manual-editing-change-note.md](17-manual-editing-change-note.md)，不反向改写中期 WBS 快照。其后剩余范围只保留确定性流水线、系统回归、视频和交付；当前待办见 [10-optimization-roadmap.md](10-optimization-roadmap.md)。

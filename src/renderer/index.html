@@ -41,7 +41,10 @@
           <section class="panel-section file-section">
             <div class="panel-heading">
               <h2>项目结构</h2>
-              <button id="refresh-project" class="text-button" type="button">刷新</button>
+              <div class="panel-heading-actions">
+                <button id="new-file" class="text-button" type="button" disabled>新建文件</button>
+                <button id="refresh-project" class="text-button" type="button">刷新</button>
+              </div>
             </div>
             <div id="file-tree" class="file-tree">
               <p class="empty-copy">打开项目后，这里会显示目录和文件。</p>
@@ -82,6 +85,9 @@
               <span id="preview-meta">只读</span>
             </div>
             <div class="preview-header-actions">
+              <button id="edit-file" class="preview-action" type="button" hidden>编辑</button>
+              <button id="save-file" class="preview-action primary-action" type="button" hidden>保存</button>
+              <button id="cancel-file-edit" class="preview-action" type="button" hidden>取消</button>
               <button id="restore-file-change" class="preview-action restore-action" type="button" hidden>
                 撤销此文件
               </button>
@@ -101,7 +107,7 @@
               <h1>从项目结构开始</h1>
               <p>打开一个本地项目，选择文件查看代码，再把任务交给右侧 Agent。</p>
               <div class="welcome-hints" aria-label="核心能力">
-                <span>只读预览</span>
+                <span>预览与编辑</span>
                 <span>命令审批</span>
                 <span>Diff 审查</span>
               </div>
@@ -350,6 +356,30 @@
           <div>
             <button id="new-skill" class="button button-secondary" type="button">新建 Skill</button>
             <button class="button button-primary" value="default" type="submit">完成</button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="new-file-dialog" class="modal context-modal">
+      <form id="new-file-form">
+        <header>
+          <div>
+            <span class="modal-eyebrow">LOCAL PROJECT</span>
+            <h2>新建文本文件</h2>
+            <p>填写项目内相对路径；父目录需要已经存在，不会覆盖同名文件。</p>
+          </div>
+          <button id="close-new-file" class="close-button" aria-label="关闭" type="button">×</button>
+        </header>
+        <label for="new-file-path">相对路径</label>
+        <input id="new-file-path" type="text" placeholder="例如 docs/notes.md" autocomplete="off" spellcheck="false" required />
+        <label for="new-file-content">初始内容</label>
+        <textarea id="new-file-content" rows="12" placeholder="可以留空，稍后继续编辑。" spellcheck="false"></textarea>
+        <footer>
+          <span id="new-file-error" class="form-error" role="alert"></span>
+          <div>
+            <button id="cancel-new-file" class="button button-secondary" type="button">取消</button>
+            <button id="create-new-file" class="button button-primary" type="submit">创建并打开</button>
           </div>
         </footer>
       </form>

@@ -16,13 +16,21 @@ import {
   MAX_TASK_CHARS,
   type ChangedFileSnapshot,
   type FileSnapshot,
+  type ManualFileCreateRequest,
+  type ManualFileSaveRequest,
   type ModelProfileInput,
   type ProjectSkillInput,
   type RestoreChangedFilesRequest,
   type RunRequest,
   type SettingsInput,
 } from "./desktop/contracts";
-import { isPathInside, readProjectFile, scanProject } from "./desktop/projectService";
+import {
+  createProjectFile,
+  isPathInside,
+  readProjectFile,
+  saveProjectFile,
+  scanProject,
+} from "./desktop/projectService";
 import { ProjectContextStore } from "./desktop/projectContextStore";
 import { buildRunContextPreview } from "./desktop/runContextPreview";
 import { RunHistoryStore } from "./desktop/runHistoryStore";
@@ -127,6 +135,33 @@ export function registerIpc(
       throw new Error("文件路径无效。");
     }
     return readProjectFile(rootPath, relativePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.saveFile, async (_event, input: unknown) => {
+    requireIdle("手动保存文件");
+    const request = parseManualFileSaveRequest(input);
+    const file = await saveProjectFile(
+      requireProject(),
+      request.relativePath,
+      request.content,
+      request.expectedHash,
+    );
+    changeTracker.remove(file.relativePath);
+    const changes = await collectChangesSafely(requireProject());
+    mainWindow?.webContents.send(IPC_CHANNELS.changesUpdated, changes);
+    return { file, changes };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.createFile, async (_event, input: unknown) => {
+    requireIdle("手动新建文件");
+    const request = parseManualFileCreateRequest(input);
+    const file = await createProjectFile(
+      requireProject(),
+      request.relativePath,
+      request.content,
+    );
+    const changes = await collectChangesSafely(requireProject());
+    return { file, changes };
   });
 
   ipcMain.handle(IPC_CHANNELS.selectAttachments, async () => {
@@ -592,6 +627,36 @@ function parseRunRequest(input: unknown): RunRequest {
     useMemory: value.useMemory as boolean | undefined,
     continueFromRunId: value.continueFromRunId as string | undefined,
   };
+}
+
+function parseManualFileSaveRequest(input: unknown): ManualFileSaveRequest {
+  if (!input || typeof input !== "object") {
+    throw new Error("文件保存请求无效。");
+  }
+  const value = input as Record<string, unknown>;
+  if (
+    typeof value.relativePath !== "string" ||
+    typeof value.content !== "string" ||
+    typeof value.expectedHash !== "string"
+  ) {
+    throw new Error("文件保存请求无效。");
+  }
+  return {
+    relativePath: value.relativePath,
+    content: value.content,
+    expectedHash: value.expectedHash,
+  };
+}
+
+function parseManualFileCreateRequest(input: unknown): ManualFileCreateRequest {
+  if (!input || typeof input !== "object") {
+    throw new Error("新建文件请求无效。");
+  }
+  const value = input as Record<string, unknown>;
+  if (typeof value.relativePath !== "string" || typeof value.content !== "string") {
+    throw new Error("新建文件请求无效。");
+  }
+  return { relativePath: value.relativePath, content: value.content };
 }
 
 function parseProjectSkillInput(input: unknown): ProjectSkillInput {

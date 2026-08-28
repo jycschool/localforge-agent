@@ -1,6 +1,6 @@
 # LocalForge
 
-LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用 Codex 风格的工作台：左侧显示项目结构与变更文件，中间提供只读代码和任务前后差异，右侧以连续可滚动会话展示用户问题、Agent 流式回复、工具时间线和命令审批。
+LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用 Codex 风格的工作台：左侧显示项目结构与变更文件，中间提供代码预览、轻量手动编辑和任务前后差异，右侧以连续可滚动会话展示用户问题、Agent 流式回复、工具时间线和命令审批。
 
 公开仓库：https://github.com/jycschool/localforge-agent
 
@@ -9,7 +9,8 @@ LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用
 ## 当前能力
 
 - 打开本地项目并显示过滤后的目录结构；重启后安全恢复上次授权项目和按项目隔离的未发送草稿。
-- 支持 `Ctrl+P` 按文件名或路径快速打开；只读预览带行号，并可复制项目内路径或文件内容。
+- 支持 `Ctrl+P` 按文件名或路径快速打开；预览带行号，并可复制项目内路径或文件内容。
+- 可在 FILE 模式手动编辑文本并用 `Ctrl+S` 保存，也可在已有目录中新建文本文件；保存前校验内容摘要，外部冲突不会被覆盖，手动修改不冒充 Agent Diff。
 - 使用 OpenAI-compatible `/chat/completions`、SSE 流式输出和原生 tool calling 完成多轮任务；不支持 SSE 的兼容服务仍可返回完整 JSON。
 - 列表、搜索、读取、精确替换和写入工作区文件。
 - 对每条本地命令显示原因、命令和工作目录，并由用户逐次批准。
@@ -49,7 +50,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-short
 
 此后双击桌面的 `LocalForge` 即可直接启动现有 `dist` 构建，不会弹出命令行窗口。源码变化后先运行一次 `pnpm run build`；如果移动项目目录或重新安装依赖，应重新创建快捷方式。该方式依赖本机项目目录与 `node_modules`，不是可分发安装包。
 
-开发冻结前可运行 `pnpm run verify` 完成类型检查、112 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+开发冻结前可运行 `pnpm run verify` 完成类型检查、118 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
 录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
 
@@ -65,7 +66,7 @@ src/
   core/        模型消息和工具协议
   desktop/     桌面 IPC、配置、项目读取与任务历史服务
   model/       OpenAI-compatible 模型客户端
-  renderer/    项目树、代码预览、时间线和审批界面
+  renderer/    项目树、代码预览/轻量编辑、时间线和审批界面
   tools/       受工作区边界保护的本地工具
   main.ts      Electron 主进程与任务编排
   preload.ts   最小权限的安全桥接
@@ -80,6 +81,6 @@ docs/          软件生命周期文档、ADR 与界面原型
 1. 核心 Agent 逻辑自行实现，桌面框架不参与模型决策。
 2. 文件和命令操作只针对用户明确打开的本地项目。
 3. 默认可观察、可停止、可审查，不把模型文字直接当作成功证据。
-4. 首版是 Agent 工作台，不追求完整编辑器、调试器或版本控制功能。
+4. 首版是 Agent 工作台，只提供受限文本编辑，不追求语言服务、调试器或版本控制功能。
 
 完整需求、用例、设计、计划和追踪关系见 [docs/README.md](docs/README.md)。真实 ModelScope 模型已完成三轮修改验证（10、10、9 步）和一轮 0 命令、0 改动的只读验证；另一次远端 429 已转化为有限重试和明确指引。计划于 2026 年 9 月 2 日前完成演示视频和最终材料。

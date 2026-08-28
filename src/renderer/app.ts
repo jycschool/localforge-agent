@@ -4,6 +4,7 @@ import {
   MAX_TASK_CHARS,
   type ChangedFileSnapshot,
   type DesktopApi,
+  type FileSnapshot,
   type ModelProfileInput,
   type ModelProfilesSnapshot,
   type ModelProfileSummary,
@@ -15,6 +16,14 @@ import {
   type RunHistorySummary,
   type RunRequest,
 } from "../desktop/contracts";
+import {
+  detectLineEnding,
+  editorByteLength,
+  isEditorDirty,
+  normalizeEditorContent,
+  serializeEditorContent,
+  type LineEnding,
+} from "./features/manualEditor";
 import { setupColumnResizing } from "./features/panelResizing";
 import { rankQuickOpen, type QuickOpenMatch } from "./features/quickOpen";
 import { clearTaskDraft, loadTaskDraft, saveTaskDraft } from "./features/taskDraft";
@@ -37,6 +46,15 @@ interface TreeNode {
   relativePath: string;
   directories: Map<string, TreeNode>;
   files: string[];
+}
+
+interface ManualEditorState {
+  relativePath: string;
+  originalNormalized: string;
+  expectedHash: string;
+  lineEnding: LineEnding;
+  textarea: HTMLTextAreaElement;
+  lineNumbers: HTMLElement;
 }
 
 const api = window.localForge;
@@ -85,6 +103,9 @@ let draftSaveTimer: number | undefined;
 let previewCopyPath = "";
 let previewCopyContent = "";
 let activeDiffPath: string | null = null;
+let currentFile: FileSnapshot | null = null;
+let manualEditor: ManualEditorState | null = null;
+let manualCancelArmed = false;
 let restoreArmKey: string | null = null;
 let quickOpenMatches: QuickOpenMatch[] = [];
 let quickOpenSelectionIndex = 0;
@@ -95,6 +116,7 @@ const MAX_CONVERSATION_HISTORY_RUNS = 12;
 const openProjectButton = element<HTMLButtonElement>("open-project");
 const welcomeOpenProjectButton = element<HTMLButtonElement>("welcome-open-project");
 const refreshProjectButton = element<HTMLButtonElement>("refresh-project");
+const newFileButton = element<HTMLButtonElement>("new-file");
 const projectName = element<HTMLElement>("project-name");
 const projectPath = element<HTMLElement>("project-path");
 const fileTree = element<HTMLElement>("file-tree");
@@ -106,6 +128,9 @@ const previewMode = element<HTMLElement>("preview-mode");
 const previewContent = element<HTMLElement>("preview-content");
 const copyFilePathButton = element<HTMLButtonElement>("copy-file-path");
 const copyFileContentButton = element<HTMLButtonElement>("copy-file-content");
+const editFileButton = element<HTMLButtonElement>("edit-file");
+const saveFileButton = element<HTMLButtonElement>("save-file");
+const cancelFileEditButton = element<HTMLButtonElement>("cancel-file-edit");
 const restoreFileChangeButton = element<HTMLButtonElement>("restore-file-change");
 const restoreAllChangesButton = element<HTMLButtonElement>("restore-all-changes");
 const outputLog = element<HTMLElement>("output-log");
@@ -204,6 +229,14 @@ const quickOpenForm = element<HTMLFormElement>("quick-open-form");
 const quickOpenInput = element<HTMLInputElement>("quick-open-input");
 const quickOpenCount = element<HTMLElement>("quick-open-count");
 const quickOpenList = element<HTMLElement>("quick-open-list");
+const newFileDialog = element<HTMLDialogElement>("new-file-dialog");
+const newFileForm = element<HTMLFormElement>("new-file-form");
+const newFilePathInput = element<HTMLInputElement>("new-file-path");
+const newFileContentInput = element<HTMLTextAreaElement>("new-file-content");
+const newFileError = element<HTMLElement>("new-file-error");
+const closeNewFileButton = element<HTMLButtonElement>("close-new-file");
+const cancelNewFileButton = element<HTMLButtonElement>("cancel-new-file");
+const createNewFileButton = element<HTMLButtonElement>("create-new-file");
 const toast = element<HTMLElement>("toast");
 const workbench = element<HTMLElement>("workbench");
 const leftResizer = element<HTMLElement>("left-resizer");
@@ -212,6 +245,7 @@ const rightResizer = element<HTMLElement>("right-resizer");
 openProjectButton.addEventListener("click", () => void selectProject());
 welcomeOpenProjectButton.addEventListener("click", () => void selectProject());
 refreshProjectButton.addEventListener("click", () => void refreshProject());
+newFileButton.addEventListener("click", openNewFileDialog);
 clearOutputButton.addEventListener("click", () => {
   outputLog.textContent = "等待 Agent 运行命令或工具…";
 });
@@ -226,6 +260,9 @@ taskForm.addEventListener("submit", (event) => void startRun(event));
 taskInput.addEventListener("input", scheduleDraftPersistence);
 copyFilePathButton.addEventListener("click", () => void copyPreviewValue("path"));
 copyFileContentButton.addEventListener("click", () => void copyPreviewValue("content"));
+editFileButton.addEventListener("click", beginManualEdit);
+saveFileButton.addEventListener("click", () => void saveManualEdit());
+cancelFileEditButton.addEventListener("click", () => cancelManualEdit());
 restoreFileChangeButton.addEventListener("click", () => void restoreCurrentFile());
 restoreAllChangesButton.addEventListener("click", () => void restoreAllChanges());
 attachmentsButton.addEventListener("click", () => void selectAttachments());
@@ -271,8 +308,21 @@ quickOpenInput.addEventListener("input", () => {
 });
 quickOpenInput.addEventListener("keydown", handleQuickOpenKeydown);
 quickOpenForm.addEventListener("submit", handleQuickOpenSubmit);
+newFileForm.addEventListener("submit", (event) => void createManualFile(event));
+closeNewFileButton.addEventListener("click", closeNewFileDialog);
+cancelNewFileButton.addEventListener("click", closeNewFileDialog);
+newFileDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeNewFileDialog();
+});
 document.addEventListener("keydown", handleGlobalShortcut);
-window.addEventListener("beforeunload", persistDraftNow);
+window.addEventListener("beforeunload", (event) => {
+  persistDraftNow();
+  if (manualEditor && isEditorDirty(manualEditor.textarea.value, manualEditor.originalNormalized)) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
 
 setupColumnResizing({ workbench, leftResizer, rightResizer });
 
@@ -306,6 +356,9 @@ async function initialize(): Promise<void> {
 }
 
 async function selectProject(): Promise<void> {
+  if (!canLeaveManualEditor("打开其他项目")) {
+    return;
+  }
   try {
     persistDraftNow();
     const selected = await api.selectProject();
@@ -321,6 +374,9 @@ async function selectProject(): Promise<void> {
 async function activateProject(selected: ProjectSnapshot): Promise<void> {
   project = selected;
   selectedFile = null;
+  currentFile = null;
+  manualEditor = null;
+  manualCancelArmed = false;
   changes = [];
   activeDiffPath = null;
   restoreArmKey = null;
@@ -360,6 +416,9 @@ async function activateProject(selected: ProjectSnapshot): Promise<void> {
 }
 
 async function refreshProject(showMessage = true): Promise<void> {
+  if (!canLeaveManualEditor("刷新项目结构")) {
+    return;
+  }
   try {
     const refreshed = await api.refreshProject();
     if (!refreshed) {
@@ -380,6 +439,18 @@ async function refreshProject(showMessage = true): Promise<void> {
 
 function handleGlobalShortcut(event: KeyboardEvent): void {
   if (
+    !event.defaultPrevented &&
+    (event.ctrlKey || event.metaKey) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    event.key.toLocaleLowerCase() === "s" &&
+    manualEditor
+  ) {
+    event.preventDefault();
+    void saveManualEdit();
+    return;
+  }
+  if (
     event.defaultPrevented ||
     (!event.ctrlKey && !event.metaKey) ||
     event.altKey ||
@@ -393,6 +464,9 @@ function handleGlobalShortcut(event: KeyboardEvent): void {
 }
 
 function openQuickOpen(): void {
+  if (!canLeaveManualEditor("快速打开其他文件")) {
+    return;
+  }
   if (!project) {
     notify("请先打开一个项目。");
     return;
@@ -521,6 +595,7 @@ function renderProject(): void {
   fileTree.scrollTop = previousScrollTop;
   newConversationButton.disabled = runIsActive;
   attachmentsButton.disabled = runIsActive;
+  newFileButton.disabled = runIsActive || !project || Boolean(manualEditor);
 }
 
 function insertFile(root: TreeNode, relativePath: string): void {
@@ -628,22 +703,216 @@ function updateFileSelection(): void {
 }
 
 async function openFile(relativePath: string): Promise<void> {
+  if (manualEditor) {
+    if (manualEditor.relativePath === relativePath) {
+      manualEditor.textarea.focus();
+    } else {
+      canLeaveManualEditor("打开其他文件");
+    }
+    return;
+  }
   try {
     const file = await api.readFile(relativePath);
-    selectedFile = file.relativePath;
-    activeDiffPath = null;
-    restoreArmKey = null;
-    previewTitle.textContent = file.relativePath;
-    previewMeta.textContent = `${file.language} · ${formatBytes(file.size)} · 只读`;
-    previewMode.textContent = "FILE";
-    previewContent.replaceChildren(codePreview(file.content));
-    setPreviewCopyValues(file.relativePath, file.content);
-    selectedContext.textContent = `上下文：${file.relativePath}`;
-    updateFileSelection();
-    renderChanges();
-    renderRestoreActions();
+    showFileSnapshot(file);
   } catch (error) {
     notify(errorMessage(error));
+  }
+}
+
+function showFileSnapshot(file: FileSnapshot): void {
+  currentFile = file;
+  selectedFile = file.relativePath;
+  activeDiffPath = null;
+  restoreArmKey = null;
+  previewTitle.textContent = file.relativePath;
+  previewMeta.textContent = `${file.language} · ${formatBytes(file.size)} · 可编辑`;
+  previewMode.textContent = "FILE";
+  previewContent.replaceChildren(codePreview(file.content));
+  setPreviewCopyValues(file.relativePath, file.content);
+  selectedContext.textContent = `上下文：${file.relativePath}`;
+  updateFileSelection();
+  renderChanges();
+  renderRestoreActions();
+  renderManualEditorActions();
+}
+
+function beginManualEdit(): void {
+  if (!currentFile || runIsActive || manualEditor) {
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.className = "manual-editor";
+  textarea.value = normalizeEditorContent(currentFile.content);
+  textarea.spellcheck = false;
+  textarea.setAttribute("aria-label", `编辑 ${currentFile.relativePath}`);
+  const lineNumbers = document.createElement("pre");
+  lineNumbers.className = "code-line-numbers";
+  lineNumbers.setAttribute("aria-hidden", "true");
+  const frame = document.createElement("div");
+  frame.className = "manual-editor-frame";
+  frame.append(lineNumbers, textarea);
+  manualEditor = {
+    relativePath: currentFile.relativePath,
+    originalNormalized: textarea.value,
+    expectedHash: currentFile.contentHash,
+    lineEnding: detectLineEnding(currentFile.content),
+    textarea,
+    lineNumbers,
+  };
+  manualCancelArmed = false;
+  textarea.addEventListener("input", updateManualEditorState);
+  textarea.addEventListener("scroll", () => {
+    lineNumbers.scrollTop = textarea.scrollTop;
+  });
+  previewContent.replaceChildren(frame);
+  updateManualEditorState();
+  renderManualEditorActions();
+  textarea.focus();
+}
+
+function updateManualEditorState(): void {
+  if (!manualEditor || !currentFile) {
+    return;
+  }
+  const dirty = isEditorDirty(
+    manualEditor.textarea.value,
+    manualEditor.originalNormalized,
+  );
+  const lines = manualEditor.textarea.value.split("\n").length;
+  manualEditor.lineNumbers.textContent = Array.from(
+    { length: lines },
+    (_, index) => index + 1,
+  ).join("\n");
+  const bytes = editorByteLength(manualEditor.textarea.value, manualEditor.lineEnding);
+  previewMeta.textContent = `${currentFile.language} · ${formatBytes(bytes)} · ${dirty ? "未保存" : "编辑中"}`;
+  previewCopyContent = serializeEditorContent(
+    manualEditor.textarea.value,
+    manualEditor.lineEnding,
+  );
+  manualCancelArmed = false;
+  renderManualEditorActions();
+}
+
+async function saveManualEdit(): Promise<void> {
+  if (!manualEditor || !currentFile || runIsActive) {
+    return;
+  }
+  const editor = manualEditor;
+  const content = serializeEditorContent(editor.textarea.value, editor.lineEnding);
+  if (!isEditorDirty(editor.textarea.value, editor.originalNormalized)) {
+    cancelManualEdit(true);
+    notify("文件内容没有变化。");
+    return;
+  }
+  const wasAgentChange = changes.some((change) => change.relativePath === editor.relativePath);
+  saveFileButton.disabled = true;
+  try {
+    const result = await api.saveFile({
+      relativePath: editor.relativePath,
+      content,
+      expectedHash: editor.expectedHash,
+    });
+    manualEditor = null;
+    manualCancelArmed = false;
+    changes = result.changes;
+    showFileSnapshot(result.file);
+    await refreshProject(false);
+    renderChanges();
+    notify(
+      wasAgentChange
+        ? "文件已保存，并已从本次 Agent 变更区移除。"
+        : "文件已保存。",
+    );
+  } catch (error) {
+    saveFileButton.disabled = false;
+    notify(errorMessage(error));
+  }
+}
+
+function cancelManualEdit(force = false): void {
+  if (!manualEditor || !currentFile) {
+    return;
+  }
+  const dirty = isEditorDirty(
+    manualEditor.textarea.value,
+    manualEditor.originalNormalized,
+  );
+  if (dirty && !force && !manualCancelArmed) {
+    manualCancelArmed = true;
+    renderManualEditorActions();
+    notify("再点一次“确认放弃”，未保存内容不会写入文件。");
+    return;
+  }
+  const file = currentFile;
+  manualEditor = null;
+  manualCancelArmed = false;
+  showFileSnapshot(file);
+}
+
+function renderManualEditorActions(): void {
+  const editing = Boolean(manualEditor);
+  editFileButton.hidden = !currentFile || editing || activeDiffPath !== null;
+  editFileButton.disabled = runIsActive || !currentFile;
+  saveFileButton.hidden = !editing;
+  saveFileButton.disabled = runIsActive || !editing;
+  cancelFileEditButton.hidden = !editing;
+  cancelFileEditButton.disabled = runIsActive || !editing;
+  cancelFileEditButton.textContent = manualCancelArmed ? "确认放弃" : "取消";
+  newFileButton.disabled = runIsActive || !project || editing;
+}
+
+function canLeaveManualEditor(action: string): boolean {
+  if (!manualEditor) {
+    return true;
+  }
+  notify(`请先保存或取消当前编辑，再${action}。`);
+  manualEditor.textarea.focus();
+  return false;
+}
+
+function openNewFileDialog(): void {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  if (runIsActive || !canLeaveManualEditor("新建文件")) {
+    return;
+  }
+  newFilePathInput.value = "";
+  newFileContentInput.value = "";
+  newFileError.textContent = "";
+  createNewFileButton.disabled = false;
+  newFileDialog.showModal();
+  newFilePathInput.focus();
+}
+
+function closeNewFileDialog(): void {
+  if (newFileDialog.open) {
+    newFileDialog.close();
+  }
+}
+
+async function createManualFile(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  if (!project || runIsActive) {
+    return;
+  }
+  newFileError.textContent = "";
+  createNewFileButton.disabled = true;
+  try {
+    const result = await api.createFile({
+      relativePath: newFilePathInput.value.trim(),
+      content: newFileContentInput.value,
+    });
+    changes = result.changes;
+    closeNewFileDialog();
+    await refreshProject(false);
+    showFileSnapshot(result.file);
+    renderChanges();
+    notify(`已创建 ${result.file.relativePath}。`);
+  } catch (error) {
+    newFileError.textContent = errorMessage(error);
+    createNewFileButton.disabled = false;
   }
 }
 
@@ -670,7 +939,11 @@ function renderChanges(): void {
 }
 
 function showDiff(change: ChangedFileSnapshot): void {
+  if (!canLeaveManualEditor("查看 Agent Diff")) {
+    return;
+  }
   selectedFile = change.relativePath;
+  currentFile = null;
   activeDiffPath = change.relativePath;
   restoreArmKey = null;
   previewTitle.textContent = change.relativePath;
@@ -687,6 +960,7 @@ function showDiff(change: ChangedFileSnapshot): void {
   selectedContext.textContent = `上下文：${change.relativePath}`;
   updateFileSelection();
   renderRestoreActions();
+  renderManualEditorActions();
 }
 
 function renderRestoreActions(): void {
@@ -787,6 +1061,7 @@ function diffColumn(label: string, content: string): HTMLElement {
 }
 
 function showProjectWelcome(): void {
+  currentFile = null;
   activeDiffPath = null;
   restoreArmKey = null;
   previewTitle.textContent = project ? project.name : "代码预览";
@@ -807,7 +1082,7 @@ function showProjectWelcome(): void {
   const hints = document.createElement("div");
   hints.className = "welcome-hints";
   hints.setAttribute("aria-label", "核心能力");
-  for (const hint of ["只读预览", "命令审批", "Diff 审查"]) {
+  for (const hint of ["预览与编辑", "命令审批", "Diff 审查"]) {
     const item = document.createElement("span");
     item.textContent = hint;
     hints.append(item);
@@ -817,6 +1092,7 @@ function showProjectWelcome(): void {
   setPreviewCopyValues("", "");
   selectedContext.textContent = "未选择文件";
   renderRestoreActions();
+  renderManualEditorActions();
 }
 
 function codePreview(content: string): HTMLElement {
@@ -1480,6 +1756,9 @@ function previewGroup(titleText: string, rows: string[]): HTMLElement {
 
 async function startRun(event: SubmitEvent): Promise<void> {
   event.preventDefault();
+  if (!canLeaveManualEditor("启动 Agent 任务")) {
+    return;
+  }
   if (!project) {
     notify("请先打开一个项目。");
     return;
@@ -2029,12 +2308,14 @@ function setRunning(isRunning: boolean, failed = false): void {
   contextPreviewButton.disabled = isRunning || !project;
   newConversationButton.disabled = isRunning || !project;
   historyButton.disabled = !project;
+  newFileButton.disabled = isRunning || !project || Boolean(manualEditor);
   if (!isRunning) {
     activeApproval = null;
     approvalPanel.hidden = true;
   }
   renderContinueHistoryButton();
   renderRestoreActions();
+  renderManualEditorActions();
   setRunStatus(isRunning ? "运行中" : failed ? "出错" : "待命", isRunning ? "running" : failed ? "error" : "idle");
 }
 
