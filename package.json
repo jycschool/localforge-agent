@@ -15,6 +15,7 @@
     "test": "vitest run --dir tests",
     "verify": "pnpm run check && pnpm test && pnpm run build",
     "verify:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-delivery.ps1",
+    "shortcut:create": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
     "package:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-delivery.ps1"
   },
   "devDependencies": {
