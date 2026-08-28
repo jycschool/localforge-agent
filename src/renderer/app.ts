@@ -15,11 +15,16 @@ import {
   type RunHistorySummary,
   type RunRequest,
 } from "../desktop/contracts";
-import { fileVisualFor } from "./fileIcons";
-import { displayLocalPath } from "./pathDisplay";
-import { rankQuickOpen, type QuickOpenMatch } from "./quickOpen";
-import { compactMarkdownText, parseSafeMarkdown, type InlineToken } from "./safeMarkdown";
-import { clearTaskDraft, loadTaskDraft, saveTaskDraft } from "./taskDraft";
+import { setupColumnResizing } from "./features/panelResizing";
+import { rankQuickOpen, type QuickOpenMatch } from "./features/quickOpen";
+import { clearTaskDraft, loadTaskDraft, saveTaskDraft } from "./features/taskDraft";
+import { fileVisualFor } from "./shared/fileIcons";
+import { displayLocalPath } from "./shared/pathDisplay";
+import {
+  compactMarkdownText,
+  parseSafeMarkdown,
+  type InlineToken,
+} from "./shared/safeMarkdown";
 
 declare global {
   interface Window {
@@ -269,7 +274,7 @@ quickOpenForm.addEventListener("submit", handleQuickOpenSubmit);
 document.addEventListener("keydown", handleGlobalShortcut);
 window.addEventListener("beforeunload", persistDraftNow);
 
-setupColumnResizing();
+setupColumnResizing({ workbench, leftResizer, rightResizer });
 
 api.onAgentEvent(handleAgentEvent);
 api.onApprovalRequested(showApproval);
@@ -3025,98 +3030,4 @@ function element<T extends HTMLElement>(id: string): T {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function setupColumnResizing(): void {
-  const leftDefault = 270;
-  const rightDefault = 390;
-  const leftStored = storedWidth("localforge.leftPanelWidth", leftDefault);
-  const rightStored = storedWidth("localforge.rightPanelWidth", rightDefault);
-
-  setPanelWidth("left", leftStored, false);
-  setPanelWidth("right", rightStored, false);
-  setPanelWidth("left", panelWidth("left"), false);
-
-  attachResizer(leftResizer, "left", leftDefault);
-  attachResizer(rightResizer, "right", rightDefault);
-  window.addEventListener("resize", () => {
-    setPanelWidth("right", panelWidth("right"), false);
-    setPanelWidth("left", panelWidth("left"), false);
-  });
-}
-
-function attachResizer(
-  resizer: HTMLElement,
-  side: "left" | "right",
-  defaultWidth: number,
-): void {
-  resizer.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = panelWidth(side);
-    resizer.classList.add("active");
-    document.body.classList.add("resizing-columns");
-    resizer.setPointerCapture(event.pointerId);
-
-    const move = (moveEvent: PointerEvent): void => {
-      const delta = moveEvent.clientX - startX;
-      setPanelWidth(side, startWidth + (side === "left" ? delta : -delta));
-    };
-    const finish = (finishEvent: PointerEvent): void => {
-      resizer.removeEventListener("pointermove", move);
-      resizer.removeEventListener("pointerup", finish);
-      resizer.removeEventListener("pointercancel", finish);
-      if (resizer.hasPointerCapture(finishEvent.pointerId)) {
-        resizer.releasePointerCapture(finishEvent.pointerId);
-      }
-      resizer.classList.remove("active");
-      document.body.classList.remove("resizing-columns");
-    };
-    resizer.addEventListener("pointermove", move);
-    resizer.addEventListener("pointerup", finish);
-    resizer.addEventListener("pointercancel", finish);
-  });
-
-  resizer.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-      return;
-    }
-    event.preventDefault();
-    const direction = event.key === "ArrowRight" ? 1 : -1;
-    setPanelWidth(side, panelWidth(side) + (side === "left" ? direction : -direction) * 12);
-  });
-
-  resizer.addEventListener("dblclick", () => setPanelWidth(side, defaultWidth));
-}
-
-function setPanelWidth(side: "left" | "right", requestedWidth: number, persist = true): void {
-  const minimum = side === "left" ? 210 : 300;
-  const configuredMaximum = side === "left" ? 480 : 560;
-  const otherWidth = panelWidth(side === "left" ? "right" : "left");
-  const availableMaximum = workbench.clientWidth - otherWidth - 360 - 14;
-  const maximum = Math.max(minimum, Math.min(configuredMaximum, availableMaximum));
-  const width = Math.round(Math.min(maximum, Math.max(minimum, requestedWidth)));
-  const property = side === "left" ? "--left-panel-width" : "--right-panel-width";
-  const resizer = side === "left" ? leftResizer : rightResizer;
-  workbench.style.setProperty(property, `${width}px`);
-  resizer.setAttribute("aria-valuenow", String(width));
-  resizer.setAttribute("aria-valuemax", String(Math.round(maximum)));
-  if (persist) {
-    localStorage.setItem(`localforge.${side}PanelWidth`, String(width));
-  }
-}
-
-function panelWidth(side: "left" | "right"): number {
-  const property = side === "left" ? "--left-panel-width" : "--right-panel-width";
-  const value = getComputedStyle(workbench).getPropertyValue(property);
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : side === "left" ? 270 : 390;
-}
-
-function storedWidth(key: string, fallback: number): number {
-  const parsed = Number.parseFloat(localStorage.getItem(key) ?? "");
-  return Number.isFinite(parsed) ? parsed : fallback;
 }

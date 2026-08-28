@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayLocalPath } from "../src/renderer/pathDisplay";
+import { displayLocalPath } from "../src/renderer/shared/pathDisplay";
 
 describe("displayLocalPath", () => {
   it("masks Windows user profile names", () => {

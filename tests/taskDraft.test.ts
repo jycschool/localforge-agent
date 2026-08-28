@@ -4,7 +4,7 @@ import {
   draftKey,
   loadTaskDraft,
   saveTaskDraft,
-} from "../src/renderer/taskDraft";
+} from "../src/renderer/features/taskDraft";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();

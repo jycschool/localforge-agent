@@ -1,4 +1,4 @@
-import type { ProjectFile } from "../desktop/contracts";
+import type { ProjectFile } from "../../desktop/contracts";
 
 export interface QuickOpenMatch {
   relativePath: string;

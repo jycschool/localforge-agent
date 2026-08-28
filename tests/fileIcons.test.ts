@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileVisualFor } from "../src/renderer/fileIcons";
+import { fileVisualFor } from "../src/renderer/shared/fileIcons";
 
 describe("fileVisualFor", () => {
   it("uses distinct visuals for common source files", () => {

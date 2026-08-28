@@ -5,7 +5,7 @@
 | 需求 | 设计/实现 | 计划测试 | 演示证据 |
 | --- | --- | --- | --- |
 | FR-01 打开项目 | `main.ts`、`desktop/projectService.ts`、`WorkspaceStateStore` | 项目扫描、工作区状态与 IPC 测试 | 打开演示目录；重启自动恢复，失效路径安全降级 |
-| FR-02 查看代码 | `renderer/app.ts`、`renderer/quickOpen.ts`、`readProjectFile` | UTF-8、大小、越界和快速搜索排序测试 | `Ctrl+P` 打开源文件并检查行号、复制操作 |
+| FR-02 查看代码 | `renderer/app.ts`、`renderer/features/quickOpen.ts`、`readProjectFile` | UTF-8、大小、越界和快速搜索排序测试 | `Ctrl+P` 打开源文件并检查行号、复制操作 |
 | FR-03 提交任务 | `renderer/app.ts`、`main.ts` | 空任务、20,000 字符上限、并发任务和无项目测试 | 在独立窗口提交真实任务 |
 | FR-04 检索读取 | `tools/workspaceTools.ts` | `workspaceTools.test.ts`、路径测试 | 时间线展示搜索和读取 |
 | FR-05 修改文件 | WorkspaceTools、ChangeTracker | 精确替换、新建、含糊匹配 | 源文件和测试文件产生变更 |

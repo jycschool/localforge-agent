@@ -3,7 +3,7 @@ import {
   compactMarkdownText,
   parseInline,
   parseSafeMarkdown,
-} from "../src/renderer/safeMarkdown";
+} from "../src/renderer/shared/safeMarkdown";
 
 describe("safe Markdown parser", () => {
   it("parses headings, emphasis, code and ordered lists", () => {

@@ -77,9 +77,9 @@
 | --- | --- |
 | 桌面窗口与顶栏 | `src/main.ts`、`src/renderer/index.html` |
 | 项目结构 | `src/desktop/projectService.ts`、`src/renderer/app.ts` |
-| 工作区恢复与草稿 | `src/desktop/workspaceStateStore.ts`、`src/renderer/taskDraft.ts` |
+| 工作区恢复与草稿 | `src/desktop/workspaceStateStore.ts`、`src/renderer/features/taskDraft.ts` |
 | 代码与 Diff | `src/renderer/app.ts` |
-| 快速打开 | `src/renderer/quickOpen.ts`、`src/renderer/app.ts` |
+| 快速打开 | `src/renderer/features/quickOpen.ts`、`src/renderer/app.ts` |
 | 时间线与审批 | `src/renderer/app.ts`、`src/main.ts` |
 | Skill 与 Memory | `src/desktop/projectContextStore.ts`、`src/agent/systemPrompt.ts`、`src/renderer/app.ts` |
 | 新会话与附件 | `src/agent/taskContext.ts`、`src/main.ts`、`src/renderer/app.ts` |

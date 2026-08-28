@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rankQuickOpen } from "../src/renderer/quickOpen";
+import { rankQuickOpen } from "../src/renderer/features/quickOpen";
 
 const files = [
   { relativePath: "src/main.ts" },
