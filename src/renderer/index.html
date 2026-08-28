@@ -119,7 +119,7 @@
               <strong>运行输出</strong>
               <button id="clear-output" class="text-button" type="button">清空</button>
             </header>
-            <pre id="output-log">等待 Agent 运行命令或工具…</pre>
+            <pre id="output-log">命令输出会显示在这里；文件内容和工具摘要请在右侧过程区查看。</pre>
           </section>
         </main>
 
@@ -130,9 +130,9 @@
           aria-label="调整 Agent 面板宽度"
           aria-orientation="vertical"
           aria-controls="timeline"
-          aria-valuemin="300"
+          aria-valuemin="360"
           aria-valuemax="560"
-          aria-valuenow="390"
+          aria-valuenow="420"
           tabindex="0"
           title="拖动调整宽度，双击恢复"
         ></div>
@@ -161,6 +161,42 @@
               <strong>在这里开始连续对话</strong>
               <p>你的问题、Agent 回复、工具调用和运行结果都会按顺序保留。</p>
             </div>
+          </section>
+          <section id="plan-panel" class="plan-panel" aria-live="polite" hidden>
+            <header>
+              <div>
+                <span class="plan-kicker">执行计划</span>
+                <strong id="plan-title">等待计划</strong>
+              </div>
+              <span id="plan-progress" class="plan-progress">0 / 0</span>
+            </header>
+            <ol id="plan-list" class="plan-list"></ol>
+            <div id="plan-evidence" class="plan-evidence" hidden></div>
+          </section>
+          <section
+            id="plan-approval-dialog"
+            class="plan-approval-card"
+            role="alertdialog"
+            aria-labelledby="plan-approval-title"
+            hidden
+          >
+            <header>
+              <div>
+                <span class="plan-kicker">计划需要确认</span>
+                <h3 id="plan-approval-title">确认 Agent 的执行范围</h3>
+              </div>
+              <span class="approval-state">可编辑</span>
+            </header>
+            <p id="plan-approval-explanation"></p>
+            <div id="plan-editor-list" class="plan-editor-list"></div>
+            <button id="add-plan-step" class="plan-add-button" type="button">＋ 添加步骤</button>
+            <footer>
+              <span>可修改文字、调整顺序或删除步骤；确认前不会写文件或运行命令。</span>
+              <div>
+                <button id="reject-plan" class="button button-secondary" type="button">退回计划</button>
+                <button id="approve-plan" class="button button-primary" type="button">确认并执行</button>
+              </div>
+            </footer>
           </section>
           <section
             id="approval-dialog"
@@ -239,7 +275,16 @@
             ></textarea>
             <div class="composer-footer">
               <span id="selected-context">未选择文件</span>
-              <button id="start-run" class="button button-primary" type="submit">开始任务</button>
+              <div class="composer-submit-options">
+                <label class="execution-mode-control" title="直接执行保持原有流程；先规划会在修改前请你确认计划">
+                  <span>执行方式</span>
+                  <select id="execution-mode" aria-label="执行方式">
+                    <option value="direct">直接执行</option>
+                    <option value="plan">先规划</option>
+                  </select>
+                </label>
+                <button id="start-run" class="button button-primary" type="submit">开始任务</button>
+              </div>
             </div>
           </form>
         </aside>

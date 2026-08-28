@@ -14,6 +14,21 @@ export function formatRunReport(projectName: string, run: RunHistoryDetail): str
   const evidence = run.events.length > 0
     ? run.events.map((event, index) => formatEvent(event, index + 1)).join("\n")
     : "- 无可用事件";
+  const plan = run.plan
+    ? [
+        `- 修订版本：${run.plan.revision}`,
+        `- 状态：${planStateLabel(run.plan.state)}`,
+        ...run.plan.items.map(
+          (item) => `- ${planStatusSymbol(item.status)} ${escapeText(item.title)}`,
+        ),
+        ...(run.plan.verification.length
+          ? ["", "### 完成核验", "", ...run.plan.verification.map((item) => `- ${escapeText(item)}`)]
+          : []),
+        ...(run.plan.remaining.length
+          ? ["", "### 遗留事项", "", ...run.plan.remaining.map((item) => `- ${escapeText(item)}`)]
+          : []),
+      ].join("\n")
+    : "- 本任务未使用结构化计划";
 
   return [
     `# LocalForge 任务证据报告`,
@@ -27,6 +42,7 @@ export function formatRunReport(projectName: string, run: RunHistoryDetail): str
     `- 模型配置：${escapeText(run.modelProfileName ?? "历史版本未记录")}`,
     `- 权限：${escapeText(run.permissionMode ?? "历史版本未记录")}`,
     `- 响应档位：${escapeText(run.responseProfile ?? "历史版本未记录")}`,
+    `- 执行模式：${run.executionMode === "plan" ? "先规划" : "直接执行"}`,
     `- 执行步数：${run.steps}`,
     "",
     "## 用户任务",
@@ -36,6 +52,10 @@ export function formatRunReport(projectName: string, run: RunHistoryDetail): str
     "## 执行结果",
     "",
     run.summary || "（无摘要）",
+    "",
+    "## 执行计划",
+    "",
+    plan,
     "",
     "## 上下文清单",
     "",
@@ -78,6 +98,10 @@ function formatEvent(event: AgentEvent, index: number): string {
       return `${index}. 调用工具 \`${escapeInline(event.name)}\``;
     case "tool_finished":
       return `${index}. 工具 \`${escapeInline(event.name)}\` ${event.result.isError ? "失败" : "完成"}（${event.durationMs} ms）`;
+    case "plan_updated":
+      return `${index}. 计划更新：修订 ${event.plan.revision}，${planStateLabel(event.plan.state)}`;
+    case "completion_blocked":
+      return `${index}. 第 ${event.step} 步未通过完成门禁：${oneLine(event.message)}`;
     case "run_completed":
       return `${index}. 任务完成（${event.steps} 步）：${oneLine(event.summary)}`;
     case "run_cancelled":
@@ -87,6 +111,25 @@ function formatEvent(event: AgentEvent, index: number): string {
     case "assistant_delta":
       return `${index}. 流式文本片段（未展开）`;
   }
+}
+
+function planStateLabel(state: NonNullable<RunHistoryDetail["plan"]>["state"]): string {
+  return {
+    awaiting_approval: "等待确认",
+    active: "执行中",
+    ready_to_finish: "等待完成核验",
+    completed: "已完成",
+    rejected: "未获批准",
+  }[state];
+}
+
+function planStatusSymbol(status: NonNullable<RunHistoryDetail["plan"]>["items"][number]["status"]): string {
+  return {
+    pending: "○",
+    in_progress: "◐",
+    completed: "●",
+    skipped: "－",
+  }[status];
 }
 
 function oneLine(value: string): string {

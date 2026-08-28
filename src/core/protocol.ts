@@ -56,9 +56,54 @@ export interface CommandApprovalRequest {
   cwd: string;
 }
 
+export type ExecutionMode = "direct" | "plan";
+
+export type PlanItemStatus = "pending" | "in_progress" | "completed" | "skipped";
+
+export interface PlanItem {
+  id: string;
+  title: string;
+  status: PlanItemStatus;
+}
+
+export type PlanState =
+  | "awaiting_approval"
+  | "active"
+  | "ready_to_finish"
+  | "completed"
+  | "rejected";
+
+export interface PlanSnapshot {
+  revision: number;
+  state: PlanState;
+  explanation: string;
+  items: PlanItem[];
+  verification: string[];
+  remaining: string[];
+}
+
+export interface PlanApprovalRequest {
+  id: string;
+  revision: number;
+  reason: "initial" | "revision";
+  explanation: string;
+  items: PlanItem[];
+}
+
+export interface PlanApprovalDecisionItem {
+  id?: string;
+  title: string;
+}
+
+export interface PlanApprovalDecision {
+  approved: boolean;
+  items: PlanApprovalDecisionItem[];
+}
+
 export interface ToolExecutionContext {
   signal: AbortSignal;
   requestCommandApproval(request: CommandApprovalRequest): Promise<boolean>;
+  requestPlanApproval?(request: PlanApprovalRequest): Promise<PlanApprovalDecision>;
 }
 
 export interface AgentTool {
@@ -77,6 +122,8 @@ export type AgentEvent =
   | { type: "assistant_message"; text: string }
   | { type: "tool_started"; id: string; name: string; arguments: Record<string, unknown> }
   | { type: "tool_finished"; id: string; name: string; result: ToolResult; durationMs: number }
+  | { type: "plan_updated"; plan: PlanSnapshot }
+  | { type: "completion_blocked"; step: number; message: string }
   | { type: "run_completed"; summary: string; steps: number }
   | { type: "run_cancelled"; steps: number }
   | {

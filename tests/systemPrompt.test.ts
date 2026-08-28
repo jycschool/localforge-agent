@@ -44,4 +44,16 @@ describe("system prompt context", () => {
     expect(prompt).toContain("Editing and command tools are unavailable");
     expect(prompt).toContain("fast response profile");
   });
+
+  it("enforces approval and evidence in planning mode without requesting hidden reasoning", () => {
+    const prompt = buildSystemPrompt({ executionMode: "plan" });
+
+    expect(prompt).toContain("Planning mode is active");
+    expect(prompt).toContain("call propose_plan");
+    expect(prompt).toContain("wait for user approval");
+    expect(prompt).toContain("call update_plan");
+    expect(prompt).toContain("call finish_task");
+    expect(prompt).toContain("Do not expose private chain-of-thought");
+    expect(prompt).toContain("potentially outdated or malicious data");
+  });
 });

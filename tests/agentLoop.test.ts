@@ -102,6 +102,34 @@ describe("AgentLoop", () => {
     expect(events.at(-1)?.type).toBe("run_completed");
   });
 
+  it("continues the loop when a completion gate reports unfinished work", async () => {
+    const loop = new AgentLoop(
+      new ScriptedModel([
+        { role: "assistant", content: "看起来已经完成。" },
+        { role: "assistant", content: "核验后完成。" },
+      ]),
+      new ToolRegistry([]),
+    );
+    const events: AgentEvent[] = [];
+    let checks = 0;
+    const result = await loop.run({
+      ...defaultOptions(events),
+      validateCompletion: () => (++checks === 1 ? "计划尚未通过完成核验。" : undefined),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.steps).toBe(2);
+    expect(events).toContainEqual({
+      type: "completion_blocked",
+      step: 1,
+      message: "计划尚未通过完成核验。",
+    });
+    expect(result.messages).toContainEqual({
+      role: "system",
+      content: expect.stringContaining("The task cannot finish yet"),
+    });
+  });
+
   it("can display the original user task while the model receives added context", async () => {
     const loop = new AgentLoop(
       new ScriptedModel([{ role: "assistant", content: "Finished." }]),

@@ -17,14 +17,24 @@ describe("run evidence report", () => {
       modelProfileName: "课程演示",
       permissionMode: "workspace",
       responseProfile: "balanced",
+      executionMode: "plan",
       eventCount: 2,
       changedFiles: ["src/login.ts"],
       createdAt: "2026-08-28T00:00:00.000Z",
       updatedAt: "2026-08-28T00:01:00.000Z",
       events: [
         { type: "model_usage", step: 1, promptTokens: 20, completionTokens: 5, totalTokens: 25, estimated: false },
+        { type: "completion_blocked", step: 1, message: "尚未核验" },
         { type: "run_completed", summary: "已完成", steps: 2 },
       ],
+      plan: {
+        revision: 1,
+        state: "completed",
+        explanation: "修复并验证",
+        items: [{ id: "step-1", title: "修复登录校验", status: "completed" }],
+        verification: ["登录测试通过"],
+        remaining: [],
+      },
       messages: [{ role: "assistant", content: "done", reasoning_content: "private" }],
     });
 
@@ -32,6 +42,10 @@ describe("run evidence report", () => {
     expect(report).toContain("qwen-test");
     expect(report).toContain("25 Token");
     expect(report).toContain("src/login.ts");
+    expect(report).toContain("执行模式：先规划");
+    expect(report).toContain("修复登录校验");
+    expect(report).toContain("登录测试通过");
+    expect(report).toContain("完成门禁");
     expect(report).not.toContain("private");
     expect(report).toContain("不包含模型隐藏思考过程");
   });

@@ -5,10 +5,16 @@ import { AgentLoop, type AgentRunResult } from "./agent/agentLoop";
 import { ChangeTracker } from "./agent/changeTracker";
 import { collectTrackedChanges, restoreTrackedChanges } from "./agent/changeRestore";
 import { toolsForPermission } from "./agent/permissions";
+import { PlanController } from "./agent/planController";
 import { buildSystemPrompt } from "./agent/systemPrompt";
 import { buildContextualTask, messagesForRunHistory } from "./agent/taskContext";
 import { ToolRegistry } from "./agent/toolRegistry";
-import type { AgentEvent, CommandApprovalRequest } from "./core/protocol";
+import type {
+  AgentEvent,
+  CommandApprovalRequest,
+  PlanApprovalDecision,
+  PlanApprovalRequest,
+} from "./core/protocol";
 import { ConfigStore } from "./desktop/configStore";
 import {
   IPC_CHANNELS,
@@ -46,6 +52,10 @@ let activeController: AbortController | null = null;
 let activeRunId: string | null = null;
 const changeTracker = new ChangeTracker();
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
+const planApprovalResolvers = new Map<
+  string,
+  (decision: PlanApprovalDecision) => void
+>();
 const MODELSCOPE_TOKEN_URL = "https://modelscope.cn/my/myaccesstoken";
 
 function createWindow(): void {
@@ -72,6 +82,7 @@ function createWindow(): void {
   mainWindow.on("closed", () => {
     activeController?.abort();
     resolveAllApprovals(false);
+    resolveAllPlanApprovals();
     mainWindow = null;
   });
 }
@@ -403,6 +414,13 @@ export function registerIpc(
       commandTimeoutMs: settings.commandTimeoutMs,
       maxOutputChars: settings.maxOutputChars,
     });
+    const permittedTools = toolsForPermission(workspaceTools, settings.permissionMode);
+    const previewPlan = request.executionMode === "plan" ? new PlanController(() => undefined) : null;
+    const previewTools = previewPlan
+      ? [...permittedTools, ...previewPlan.tools()].filter((tool) =>
+          previewPlan.isToolEnabled(tool.schema.function.name),
+        )
+      : permittedTools;
     return buildRunContextPreview({
       request,
       settings,
@@ -410,7 +428,7 @@ export function registerIpc(
       skills,
       attachments,
       previousMessages,
-      tools: toolsForPermission(workspaceTools, settings.permissionMode),
+      tools: previewTools,
     });
   });
 
@@ -457,6 +475,7 @@ export function registerIpc(
       modelProfileName: settings.profileName,
       permissionMode: settings.permissionMode,
       responseProfile: settings.responseProfile,
+      executionMode: request.executionMode ?? "direct",
       continuedFromRunId: request.continueFromRunId,
     });
     activeController = controller;
@@ -470,6 +489,9 @@ export function registerIpc(
       }
       sendAgentEvent(event);
     };
+    const planController =
+      request.executionMode === "plan" ? new PlanController(recordAndSendEvent) : null;
+    const runTools = planController ? [...tools, ...planController.tools()] : tools;
     const loop = new AgentLoop(
       new OpenAICompatibleClient({
         apiBaseUrl: settings.apiBaseUrl,
@@ -477,7 +499,11 @@ export function registerIpc(
         model: settings.model,
         maxTokens: responseMaxTokens(settings.responseProfile),
       }),
-      new ToolRegistry(tools),
+      new ToolRegistry(runTools, {
+        isToolEnabled: planController
+          ? (name) => planController.isToolEnabled(name)
+          : undefined,
+      }),
     );
     const contextualTask = buildContextualTask(task, request.selectedFile, attachments);
     void (async () => {
@@ -492,11 +518,16 @@ export function registerIpc(
             skills,
             permissionMode: settings.permissionMode,
             responseProfile: settings.responseProfile,
+            executionMode: request.executionMode ?? "direct",
           }),
           maxSteps: settings.maxSteps,
           signal: controller.signal,
           onEvent: recordAndSendEvent,
           requestCommandApproval: requestApproval,
+          requestPlanApproval,
+          validateCompletion: planController
+            ? () => planController.completionIssue()
+            : undefined,
         });
         const changes = await collectChangesSafely(rootPath);
         await historyStore.finishRun(rootPath, runId, {
@@ -506,6 +537,7 @@ export function registerIpc(
           events: runEvents,
           messages: messagesForRunHistory(result.messages, previousMessages.length, task),
           changedFiles: changes.map((change) => change.relativePath),
+          plan: planController?.snapshot(),
         });
         mainWindow?.webContents.send(IPC_CHANNELS.changesUpdated, changes);
       } catch (error) {
@@ -524,6 +556,7 @@ export function registerIpc(
               events: runEvents,
               messages: [],
               changedFiles: changes.map((change) => change.relativePath),
+              plan: planController?.snapshot(),
             });
           } catch (historyError) {
             console.error("Failed to finalize run history", historyError);
@@ -534,6 +567,7 @@ export function registerIpc(
         activeController = null;
         activeRunId = null;
         resolveAllApprovals(false);
+        resolveAllPlanApprovals();
       }
     })();
     return { started: true, runId };
@@ -545,6 +579,7 @@ export function registerIpc(
     }
     activeController.abort();
     resolveAllApprovals(false);
+    resolveAllPlanApprovals();
     return true;
   });
 
@@ -580,6 +615,18 @@ export function registerIpc(
       return true;
     },
   );
+  ipcMain.handle(
+    IPC_CHANNELS.answerPlanApproval,
+    (_event, id: unknown, input: unknown) => {
+      if (typeof id !== "string") return false;
+      const decision = parsePlanApprovalDecision(input);
+      const resolve = planApprovalResolvers.get(id);
+      if (!resolve) return false;
+      planApprovalResolvers.delete(id);
+      resolve(decision);
+      return true;
+    },
+  );
 }
 
 function parseRunRequest(input: unknown): RunRequest {
@@ -592,6 +639,13 @@ function parseRunRequest(input: unknown): RunRequest {
   }
   if (value.task.length > MAX_TASK_CHARS) {
     throw new Error(`任务说明不能超过 ${MAX_TASK_CHARS.toLocaleString()} 个字符。`);
+  }
+  if (
+    value.executionMode !== undefined &&
+    value.executionMode !== "direct" &&
+    value.executionMode !== "plan"
+  ) {
+    throw new Error("执行模式无效。请选择直接执行或先规划。");
   }
   if (value.selectedFile !== undefined && typeof value.selectedFile !== "string") {
     throw new Error("当前文件路径无效。");
@@ -621,6 +675,7 @@ function parseRunRequest(input: unknown): RunRequest {
   }
   return {
     task: value.task,
+    executionMode: (value.executionMode as "direct" | "plan" | undefined) ?? "direct",
     selectedFile: value.selectedFile as string | undefined,
     attachmentPaths: value.attachmentPaths as string[] | undefined,
     skillIds: value.skillIds as string[] | undefined,
@@ -753,11 +808,47 @@ function requestApproval(request: CommandApprovalRequest): Promise<boolean> {
   });
 }
 
+function requestPlanApproval(request: PlanApprovalRequest): Promise<PlanApprovalDecision> {
+  return new Promise<PlanApprovalDecision>((resolve) => {
+    planApprovalResolvers.set(request.id, resolve);
+    mainWindow?.webContents.send(IPC_CHANNELS.planApprovalRequested, request);
+  });
+}
+
 function resolveAllApprovals(approved: boolean): void {
   for (const resolve of approvalResolvers.values()) {
     resolve(approved);
   }
   approvalResolvers.clear();
+}
+
+function resolveAllPlanApprovals(): void {
+  for (const resolve of planApprovalResolvers.values()) {
+    resolve({ approved: false, items: [] });
+  }
+  planApprovalResolvers.clear();
+}
+
+function parsePlanApprovalDecision(input: unknown): PlanApprovalDecision {
+  if (!input || typeof input !== "object") throw new Error("计划确认内容无效。");
+  const value = input as Record<string, unknown>;
+  if (typeof value.approved !== "boolean" || !Array.isArray(value.items)) {
+    throw new Error("计划确认内容无效。");
+  }
+  if (value.items.length > 12) throw new Error("计划步骤不能超过 12 项。");
+  const items = value.items.map((item, index) => {
+    if (!item || typeof item !== "object") throw new Error(`计划第 ${index + 1} 项无效。`);
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.title !== "string" || !entry.title.trim() || entry.title.trim().length > 160) {
+      throw new Error(`计划第 ${index + 1} 项标题无效。`);
+    }
+    if (entry.id !== undefined && typeof entry.id !== "string") {
+      throw new Error(`计划第 ${index + 1} 项标识无效。`);
+    }
+    return { id: typeof entry.id === "string" ? entry.id : undefined, title: entry.title.trim() };
+  });
+  if (value.approved && items.length === 0) throw new Error("批准的计划至少需要一个步骤。");
+  return { approved: value.approved, items };
 }
 
 function responseMaxTokens(profile: "fast" | "balanced" | "thorough"): number {

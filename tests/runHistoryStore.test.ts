@@ -56,7 +56,7 @@ describe("run history store", () => {
   });
 
   it("persists a bounded task result without model reasoning content", async () => {
-    const id = await store.startRun(projectPath, { task: "运行测试" });
+    const id = await store.startRun(projectPath, { task: "运行测试", executionMode: "plan" });
     await store.finishRun(projectPath, id, {
       status: "completed",
       summary: "测试通过。",
@@ -74,6 +74,14 @@ describe("run history store", () => {
         },
       ],
       changedFiles: ["src/main.ts", "src/main.ts"],
+      plan: {
+        revision: 1,
+        state: "completed",
+        explanation: "运行并核验测试",
+        items: [{ id: "test", title: "运行测试", status: "completed" }],
+        verification: ["测试通过"],
+        remaining: [],
+      },
     });
 
     const detail = await store.getRun(projectPath, id);
@@ -83,6 +91,11 @@ describe("run history store", () => {
       steps: 2,
       eventCount: 2,
       changedFiles: ["src/main.ts"],
+      executionMode: "plan",
+      plan: {
+        state: "completed",
+        verification: ["测试通过"],
+      },
     });
     expect(detail.messages[1]).toEqual({ role: "assistant", content: "测试通过。" });
   });

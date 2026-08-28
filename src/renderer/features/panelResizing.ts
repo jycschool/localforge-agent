@@ -7,7 +7,7 @@ interface PanelResizingElements {
 type PanelSide = "left" | "right";
 
 const LEFT_DEFAULT = 270;
-const RIGHT_DEFAULT = 390;
+const RIGHT_DEFAULT = 420;
 
 export function setupColumnResizing({
   workbench,
@@ -25,7 +25,7 @@ export function setupColumnResizing({
   };
 
   const setPanelWidth = (side: PanelSide, requestedWidth: number, persist = true): void => {
-    const minimum = side === "left" ? 210 : 300;
+    const minimum = side === "left" ? 210 : 360;
     const configuredMaximum = side === "left" ? 480 : 560;
     const otherWidth = panelWidth(side === "left" ? "right" : "left");
     const availableMaximum = workbench.clientWidth - otherWidth - 360 - 14;

@@ -3,6 +3,8 @@ import type {
   ChatMessage,
   CommandApprovalRequest,
   ModelClient,
+  PlanApprovalDecision,
+  PlanApprovalRequest,
   TokenUsage,
   ToolResult,
 } from "../core/protocol";
@@ -17,6 +19,8 @@ export interface AgentRunOptions {
   signal: AbortSignal;
   onEvent(event: AgentEvent): void;
   requestCommandApproval(request: CommandApprovalRequest): Promise<boolean>;
+  requestPlanApproval?(request: PlanApprovalRequest): Promise<PlanApprovalDecision>;
+  validateCompletion?(): string | undefined;
 }
 
 export interface AgentRunResult {
@@ -71,18 +75,31 @@ export class AgentLoop {
         );
         messages.push(assistant);
 
-        if (assistant.content?.trim()) {
-          options.onEvent({ type: "assistant_message", text: assistant.content.trim() });
-        }
-
         const calls = assistant.tool_calls ?? [];
         if (calls.length === 0) {
           const summary = assistant.content?.trim();
           if (!summary) {
             throw new Error("Model returned neither text nor tool calls.");
           }
+          const completionIssue = options.validateCompletion?.();
+          if (completionIssue) {
+            options.onEvent({ type: "assistant_message", text: summary });
+            options.onEvent({ type: "completion_blocked", step: steps, message: completionIssue });
+            messages.push({
+              role: "system",
+              content:
+                `The task cannot finish yet: ${completionIssue} ` +
+                "Continue using the available tools. Do not repeat the final answer until the completion gate passes.",
+            });
+            continue;
+          }
+          options.onEvent({ type: "assistant_message", text: summary });
           options.onEvent({ type: "run_completed", summary, steps });
           return { status: "completed", summary, steps, messages };
+        }
+
+        if (assistant.content?.trim()) {
+          options.onEvent({ type: "assistant_message", text: assistant.content.trim() });
         }
 
         for (const call of calls) {
@@ -116,6 +133,7 @@ export class AgentLoop {
             result = await this.registry.execute(call.function.name, argumentsValue, {
               signal: options.signal,
               requestCommandApproval: options.requestCommandApproval,
+              requestPlanApproval: options.requestPlanApproval,
             });
           }
 

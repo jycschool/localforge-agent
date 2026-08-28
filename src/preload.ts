@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AgentEvent, CommandApprovalRequest } from "./core/protocol";
+import type {
+  AgentEvent,
+  CommandApprovalRequest,
+  PlanApprovalRequest,
+} from "./core/protocol";
 import {
   IPC_CHANNELS,
   type ChangedFileSnapshot,
@@ -52,9 +56,13 @@ const api: DesktopApi = {
     ipcRenderer.invoke(IPC_CHANNELS.previewRunContext, request),
   answerApproval: (id, approved) =>
     ipcRenderer.invoke(IPC_CHANNELS.answerApproval, id, approved),
+  answerPlanApproval: (id, decision) =>
+    ipcRenderer.invoke(IPC_CHANNELS.answerPlanApproval, id, decision),
   onAgentEvent: (listener) => subscribe<AgentEvent>(IPC_CHANNELS.agentEvent, listener),
   onApprovalRequested: (listener) =>
     subscribe<CommandApprovalRequest>(IPC_CHANNELS.approvalRequested, listener),
+  onPlanApprovalRequested: (listener) =>
+    subscribe<PlanApprovalRequest>(IPC_CHANNELS.planApprovalRequested, listener),
   onChangesUpdated: (listener) =>
     subscribe<ChangedFileSnapshot[]>(IPC_CHANNELS.changesUpdated, listener),
 };

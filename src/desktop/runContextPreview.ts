@@ -27,6 +27,7 @@ export function buildRunContextPreview(input: RunContextPreviewInput): RunContex
     skills: input.skills,
     permissionMode: input.settings.permissionMode,
     responseProfile: input.settings.responseProfile,
+    executionMode: input.request.executionMode ?? "direct",
   });
   const task = buildContextualTask(
     input.request.task.trim(),
@@ -58,6 +59,7 @@ export function buildRunContextPreview(input: RunContextPreviewInput): RunContex
     model: input.settings.model,
     permissionMode: input.settings.permissionMode,
     responseProfile: input.settings.responseProfile,
+    executionMode: input.request.executionMode ?? "direct",
     selectedFile: input.request.selectedFile,
     skills: input.skills.map((skill) => ({
       name: skill.name,

@@ -6,6 +6,7 @@ describe("run context preview", () => {
     const preview = buildRunContextPreview({
       request: {
         task: "检查登录流程",
+        executionMode: "plan",
         selectedFile: "src/login.ts",
         skillIds: [".localforge/skills/review.md", "missing"],
         useMemory: true,
@@ -49,6 +50,7 @@ describe("run context preview", () => {
       memoryChars: 9,
       conversationMessageCount: 1,
       toolCount: 1,
+      executionMode: "plan",
     });
     expect(preview.estimatedInputTokens).toBeGreaterThan(0);
     expect(preview.skills).toHaveLength(1);

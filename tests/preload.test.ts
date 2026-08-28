@@ -71,6 +71,10 @@ describe("preload DesktopApi", () => {
     await api.restoreChanges({ files: [{ relativePath: "README.md", currentHash: "abc" }] });
     await api.previewRunContext({ task: "Inspect context" });
     await api.answerApproval("approval-1", true);
+    await api.answerPlanApproval("plan-1", {
+      approved: true,
+      items: [{ id: "step-1", title: "检查项目" }],
+    });
 
     expect(electronMocks.exposeInMainWorld).toHaveBeenCalledOnce();
     expect(electronMocks.exposeInMainWorld).toHaveBeenCalledWith("localForge", api);
@@ -108,6 +112,10 @@ describe("preload DesktopApi", () => {
       [IPC_CHANNELS.restoreChanges, { files: [{ relativePath: "README.md", currentHash: "abc" }] }],
       [IPC_CHANNELS.previewRunContext, { task: "Inspect context" }],
       [IPC_CHANNELS.answerApproval, "approval-1", true],
+      [IPC_CHANNELS.answerPlanApproval, "plan-1", {
+        approved: true,
+        items: [{ id: "step-1", title: "检查项目" }],
+      }],
     ]);
   });
 
@@ -135,17 +143,21 @@ describe("preload DesktopApi", () => {
   it("uses separate fixed channels for approvals and change notifications", () => {
     const api = exposedApi();
     const stopApproval = api.onApprovalRequested(vi.fn());
+    const stopPlanApproval = api.onPlanApprovalRequested(vi.fn());
     const stopChanges = api.onChangesUpdated(vi.fn());
 
     expect(electronMocks.on.mock.calls.map((call) => call[0])).toEqual([
       IPC_CHANNELS.approvalRequested,
+      IPC_CHANNELS.planApprovalRequested,
       IPC_CHANNELS.changesUpdated,
     ]);
 
     stopApproval();
+    stopPlanApproval();
     stopChanges();
     expect(electronMocks.removeListener.mock.calls.map((call) => call[0])).toEqual([
       IPC_CHANNELS.approvalRequested,
+      IPC_CHANNELS.planApprovalRequested,
       IPC_CHANNELS.changesUpdated,
     ]);
   });

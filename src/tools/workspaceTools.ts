@@ -126,12 +126,12 @@ function createListFilesTool(resolver: WorkspacePathResolver, maxOutputChars: nu
       type: "function",
       function: {
         name: "list_files",
-        description: "List files in the workspace using an optional glob-like pattern.",
+        description: "列出项目中的文件路径。用于先定位结构；结果可能受 limit 截断，不会返回文件内容。",
         parameters: {
           type: "object",
           properties: {
-            glob: { type: "string", description: "Pattern such as **/*.ts. Defaults to **/*." },
-            limit: { type: "integer", minimum: 1, maximum: 500 },
+            glob: { type: "string", minLength: 1, description: "项目相对的 glob，例如 src/**/*.ts；默认 **/*。" },
+            limit: { type: "integer", minimum: 1, maximum: 500, description: "最多返回多少个路径，默认 200。" },
           },
           additionalProperties: false,
         },
@@ -160,13 +160,13 @@ function createSearchTextTool(resolver: WorkspacePathResolver, maxOutputChars: n
       type: "function",
       function: {
         name: "search_text",
-        description: "Search UTF-8 workspace files for a literal text string.",
+        description: "在项目 UTF-8 文本文件中做区分大小写的字面量搜索，返回路径、行号和片段；不会把 query 当正则表达式。",
         parameters: {
           type: "object",
           properties: {
-            query: { type: "string" },
-            include: { type: "string", description: "Optional glob such as **/*.ts." },
-            limit: { type: "integer", minimum: 1, maximum: 200 },
+            query: { type: "string", minLength: 1, description: "要查找的原样文本。" },
+            include: { type: "string", minLength: 1, description: "可选项目相对 glob，例如 src/**/*.ts。" },
+            limit: { type: "integer", minimum: 1, maximum: 200, description: "最多返回多少处匹配，默认 80。" },
           },
           required: ["query"],
           additionalProperties: false,
@@ -213,13 +213,13 @@ function createReadFileTool(resolver: WorkspacePathResolver, maxOutputChars: num
       type: "function",
       function: {
         name: "read_file",
-        description: "Read a UTF-8 file from the workspace with optional inclusive line bounds.",
+        description: "读取一个项目内 UTF-8 文本文件，可限定首尾行；返回内容带 1 起始行号。读取前应通过已知路径或 list_files/search_text 定位。",
         parameters: {
           type: "object",
           properties: {
-            path: { type: "string" },
-            startLine: { type: "integer", minimum: 1 },
-            endLine: { type: "integer", minimum: 1 },
+            path: { type: "string", minLength: 1, description: "项目相对路径，例如 src/main.ts；不要传绝对路径。" },
+            startLine: { type: "integer", minimum: 1, description: "可选起始行，包含该行。" },
+            endLine: { type: "integer", minimum: 1, description: "可选结束行，包含该行。" },
           },
           required: ["path"],
           additionalProperties: false,
@@ -253,13 +253,13 @@ function createReplaceFileTool(resolver: WorkspacePathResolver, tracker: ChangeT
       type: "function",
       function: {
         name: "replace_in_file",
-        description: "Replace exactly one literal text occurrence in an existing workspace file.",
+        description: "在已有项目文件中精确替换唯一一处字面量。oldText 必须只出现一次；适合小范围安全编辑，并保留未涉及内容。",
         parameters: {
           type: "object",
           properties: {
-            path: { type: "string" },
-            oldText: { type: "string" },
-            newText: { type: "string" },
+            path: { type: "string", minLength: 1, description: "已有文件的项目相对路径。" },
+            oldText: { type: "string", minLength: 1, description: "必须与文件中唯一一处内容完全一致，包括空格和换行。" },
+            newText: { type: "string", description: "替换后的完整文本；允许空字符串表示删除。" },
           },
           required: ["path", "oldText", "newText"],
           additionalProperties: false,
@@ -291,12 +291,12 @@ function createWriteFileTool(resolver: WorkspacePathResolver, tracker: ChangeTra
       type: "function",
       function: {
         name: "write_file",
-        description: "Create or overwrite a UTF-8 file inside the workspace.",
+        description: "新建或完整覆盖一个项目内 UTF-8 文件。覆盖会替换整个文件；修改已有大文件时优先使用 replace_in_file。",
         parameters: {
           type: "object",
           properties: {
-            path: { type: "string" },
-            content: { type: "string" },
+            path: { type: "string", minLength: 1, description: "项目相对路径；父目录不存在时会自动创建。" },
+            content: { type: "string", description: "文件的完整最终内容，不是补丁或片段。" },
           },
           required: ["path", "content"],
           additionalProperties: false,
@@ -333,12 +333,12 @@ function createRunCommandTool(rootPath: string, timeoutMs: number, maxOutputChar
       type: "function",
       function: {
         name: "run_command",
-        description: "Run a local shell command in the workspace after explicit user approval.",
+        description: "经用户单独批准后，在项目根目录运行一条本地 shell 命令。用于构建、测试、格式化或必要诊断；不要用它代替已有文件工具。",
         parameters: {
           type: "object",
           properties: {
-            command: { type: "string" },
-            reason: { type: "string", description: "Short explanation shown in the approval UI." },
+            command: { type: "string", minLength: 1, description: "要在项目根目录执行的完整命令。避免交互式或长期驻留命令。" },
+            reason: { type: "string", minLength: 1, description: "展示给用户的简短中文说明：为什么需要执行、将验证什么。" },
           },
           required: ["command", "reason"],
           additionalProperties: false,

@@ -1,4 +1,10 @@
-import type { AgentEvent, CommandApprovalRequest, TokenUsage } from "../core/protocol";
+import type {
+  AgentEvent,
+  CommandApprovalRequest,
+  PlanApprovalRequest,
+  PlanSnapshot,
+  TokenUsage,
+} from "../core/protocol";
 import {
   MAX_ATTACHMENT_FILES,
   MAX_TASK_CHARS,
@@ -57,6 +63,11 @@ interface ManualEditorState {
   lineNumbers: HTMLElement;
 }
 
+interface PlanDraftItem {
+  id?: string;
+  title: string;
+}
+
 const api = window.localForge;
 let project: ProjectSnapshot | null = null;
 let selectedFile: string | null = null;
@@ -70,6 +81,9 @@ let modelProfiles: ModelProfilesSnapshot = {
 let editingModelProfileId: string | null = null;
 let modelProfileDeleteArmed = false;
 let activeApproval: CommandApprovalRequest | null = null;
+let activePlanApproval: PlanApprovalRequest | null = null;
+let planDraftItems: PlanDraftItem[] = [];
+let latestPlan: PlanSnapshot | null = null;
 let runHistory: RunHistorySummary[] = [];
 let projectContext: ProjectContextSnapshot = {
   skills: [],
@@ -110,6 +124,7 @@ let restoreArmKey: string | null = null;
 let quickOpenMatches: QuickOpenMatch[] = [];
 let quickOpenSelectionIndex = 0;
 const expandedDirectories = new Set<string>();
+const activeToolTimelineItems = new Map<string, HTMLElement>();
 const MAX_TIMELINE_ITEMS = 500;
 const MAX_CONVERSATION_HISTORY_RUNS = 12;
 
@@ -147,6 +162,7 @@ const taskInput = element<HTMLTextAreaElement>("task-input");
 taskInput.maxLength = MAX_TASK_CHARS;
 const defaultTaskPlaceholder = taskInput.placeholder;
 const startRunButton = element<HTMLButtonElement>("start-run");
+const executionModeInput = element<HTMLSelectElement>("execution-mode");
 const selectedContext = element<HTMLElement>("selected-context");
 const attachmentsButton = element<HTMLButtonElement>("attachments-button");
 const attachmentsBadge = element<HTMLElement>("attachments-badge");
@@ -218,6 +234,18 @@ const approvalCommand = element<HTMLElement>("approval-command");
 const approvalCwd = element<HTMLElement>("approval-cwd");
 const approveCommandButton = element<HTMLButtonElement>("approve-command");
 const rejectCommandButton = element<HTMLButtonElement>("reject-command");
+const planPanel = element<HTMLElement>("plan-panel");
+const planTitle = element<HTMLElement>("plan-title");
+const planProgress = element<HTMLElement>("plan-progress");
+const planList = element<HTMLOListElement>("plan-list");
+const planEvidence = element<HTMLElement>("plan-evidence");
+const planApprovalPanel = element<HTMLElement>("plan-approval-dialog");
+const planApprovalTitle = element<HTMLElement>("plan-approval-title");
+const planApprovalExplanation = element<HTMLElement>("plan-approval-explanation");
+const planEditorList = element<HTMLElement>("plan-editor-list");
+const addPlanStepButton = element<HTMLButtonElement>("add-plan-step");
+const approvePlanButton = element<HTMLButtonElement>("approve-plan");
+const rejectPlanButton = element<HTMLButtonElement>("reject-plan");
 const historyDialog = element<HTMLDialogElement>("history-dialog");
 const historyList = element<HTMLElement>("history-list");
 const historyDetail = element<HTMLElement>("history-detail");
@@ -247,7 +275,7 @@ welcomeOpenProjectButton.addEventListener("click", () => void selectProject());
 refreshProjectButton.addEventListener("click", () => void refreshProject());
 newFileButton.addEventListener("click", openNewFileDialog);
 clearOutputButton.addEventListener("click", () => {
-  outputLog.textContent = "等待 Agent 运行命令或工具…";
+  outputLog.textContent = "命令输出会显示在这里；文件内容和工具摘要请在右侧过程区查看。";
 });
 settingsButton.addEventListener("click", () => void openSettings());
 modelProfileSwitch.addEventListener("change", () => void switchModelProfile());
@@ -302,6 +330,9 @@ openModelScopeTokenButton.addEventListener("click", () => void api.openModelScop
 exportRunReportButton.addEventListener("click", () => void exportSelectedRunReport());
 approveCommandButton.addEventListener("click", (event) => void answerApproval(event, true));
 rejectCommandButton.addEventListener("click", (event) => void answerApproval(event, false));
+addPlanStepButton.addEventListener("click", addPlanStep);
+approvePlanButton.addEventListener("click", () => void answerPlanApproval(true));
+rejectPlanButton.addEventListener("click", () => void answerPlanApproval(false));
 quickOpenInput.addEventListener("input", () => {
   quickOpenSelectionIndex = 0;
   renderQuickOpenResults();
@@ -328,6 +359,7 @@ setupColumnResizing({ workbench, leftResizer, rightResizer });
 
 api.onAgentEvent(handleAgentEvent);
 api.onApprovalRequested(showApproval);
+api.onPlanApprovalRequested(showPlanApproval);
 api.onChangesUpdated((nextChanges) => {
   changes = nextChanges;
   restoreArmKey = null;
@@ -408,6 +440,7 @@ async function activateProject(selected: ProjectSnapshot): Promise<void> {
   treeInitialized = false;
   expandedDirectories.clear();
   clearTimeline(true);
+  resetPlanUi();
   renderProject();
   renderChanges();
   showProjectWelcome();
@@ -1604,6 +1637,7 @@ function newConversation(): void {
   renderContinuationContext();
   renderAttachments();
   clearTimeline(true);
+  resetPlanUi();
   renderTokenUsage(null);
   taskInput.focus();
   notify("已新建空白会话；原记录仍保留在历史中。");
@@ -1652,6 +1686,7 @@ function renderAttachments(): void {
 function currentRunRequest(): RunRequest {
   return {
     task: taskInput.value.trim(),
+    executionMode: executionModeInput.value === "plan" ? "plan" : "direct",
     selectedFile: selectedFile ?? undefined,
     attachmentPaths,
     skillIds: Array.from(selectedSkillIds),
@@ -1683,7 +1718,7 @@ async function openContextPreview(): Promise<void> {
     const token = document.createElement("strong");
     token.textContent = `≈ ${formatTokenCount(preview.estimatedInputTokens)} Token`;
     const model = document.createElement("span");
-    model.textContent = `${preview.profileName} · ${preview.model} · ${preview.permissionMode === "readOnly" ? "只读" : "工作区读写"} · ${responseProfileLabel(preview.responseProfile)}`;
+    model.textContent = `${preview.profileName} · ${preview.model} · ${preview.permissionMode === "readOnly" ? "只读" : "工作区读写"} · ${responseProfileLabel(preview.responseProfile)} · ${preview.executionMode === "plan" ? "先规划" : "直接执行"}`;
     hero.append(token, model);
 
     const metrics = document.createElement("div");
@@ -1878,6 +1913,8 @@ function handleAgentEvent(event: AgentEvent): void {
     case "run_started":
       lastAssistantMessage = "";
       resetStreamingTimeline();
+      resetPlanUi();
+      activeToolTimelineItems.clear();
       renderTokenUsage(null);
       setRunning(true);
       appendConversationMessage("user", event.task, "你", undefined, true);
@@ -1896,22 +1933,45 @@ function handleAgentEvent(event: AgentEvent): void {
       finishStreamingMessage(event.text);
       break;
     case "tool_started":
-      finishStreamingToolDecision(event.name);
-      appendTimeline(
-        toolLabel(event.name),
-        summarizeArguments(event.name, event.arguments),
-        "active",
+      activeToolTimelineItems.set(
+        event.id,
+        finishStreamingToolDecision(event.name, event.arguments) ??
+          appendTimeline(
+            toolLabel(event.name),
+            summarizeArguments(event.name, event.arguments),
+            "active",
+          ),
       );
       break;
-    case "tool_finished":
+    case "tool_finished": {
       handleToolOutput(event.name, event.result.content);
-      appendTimeline(
-        event.result.isError ? `${toolLabel(event.name)}失败` : `${toolLabel(event.name)}完成`,
-        toolResultDetail(event.name, event.result.content, event.durationMs),
-        event.result.isError ? "error" : "success",
-      );
+      const toolItem = activeToolTimelineItems.get(event.id);
+      if (toolItem) {
+        updateTimelineItem(
+          toolItem,
+          event.result.isError ? `${toolLabel(event.name)}失败` : `${toolLabel(event.name)}完成`,
+          toolResultDetail(event.name, event.result.content, event.durationMs),
+          event.result.isError ? "error" : "success",
+        );
+        activeToolTimelineItems.delete(event.id);
+      } else {
+        appendTimeline(
+          event.result.isError ? `${toolLabel(event.name)}失败` : `${toolLabel(event.name)}完成`,
+          toolResultDetail(event.name, event.result.content, event.durationMs),
+          event.result.isError ? "error" : "success",
+        );
+      }
+      break;
+    }
+    case "plan_updated":
+      latestPlan = event.plan;
+      renderPlan(event.plan);
+      break;
+    case "completion_blocked":
+      appendTimeline("完成检查未通过", event.message, "active");
       break;
     case "run_completed":
+      finishPendingToolItems("任务已结束，但工具未返回完整结果。", "error");
       if (lastAssistantMessage === event.summary.trim()) {
         appendTimeline("任务完成", `共执行 ${event.steps} 步，完整结果见上一条 Agent 消息。`, "success");
       } else {
@@ -1922,11 +1982,13 @@ function handleAgentEvent(event: AgentEvent): void {
       break;
     case "run_cancelled":
       finishInterruptedStream("模型响应已停止");
+      finishPendingToolItems("任务停止时工具尚未返回结果。", "error");
       appendTimeline("任务已停止", `共执行 ${event.steps} 步`, "error");
       setRunning(false);
       break;
     case "run_failed":
       finishInterruptedStream("模型响应未完成");
+      finishPendingToolItems("任务异常结束，工具结果可能不完整。", "error");
       if (event.reason === "max_steps") {
         const item = appendTimeline("已达到步骤上限", event.message, "active");
         appendContinueRunAction(item);
@@ -1938,6 +2000,17 @@ function handleAgentEvent(event: AgentEvent): void {
       }
       break;
   }
+}
+
+function finishPendingToolItems(
+  detail: string,
+  state: "success" | "error",
+): void {
+  for (const item of activeToolTimelineItems.values()) {
+    const currentTitle = item.querySelector("strong")?.textContent ?? "工具调用";
+    updateTimelineItem(item, currentTitle, detail, state);
+  }
+  activeToolTimelineItems.clear();
 }
 
 function appendContinueRunAction(item: HTMLElement): void {
@@ -2010,27 +2083,34 @@ function finishStreamingMessage(text: string): void {
   resetStreamingTimeline();
 }
 
-function finishStreamingToolDecision(toolName: string): void {
+function finishStreamingToolDecision(
+  toolName: string,
+  argumentsValue: Record<string, unknown>,
+): HTMLElement | null {
   if (!streamingTimelineItem) {
-    return;
+    return null;
   }
   cancelStreamingFrame();
+  const item = streamingTimelineItem;
   if (streamingAssistantText) {
     updateConversationItem(
-      streamingTimelineItem,
+      item,
       "assistant",
       streamingAssistantText,
       "LocalForge",
     );
+    resetStreamingTimeline();
+    return null;
   } else {
     updateTimelineItem(
-      streamingTimelineItem,
-      `第 ${streamingStep} 步`,
-      `模型已请求${toolLabel(toolName)}。`,
-      "success",
+      item,
+      toolLabel(toolName),
+      summarizeArguments(toolName, argumentsValue),
+      "active",
     );
   }
   resetStreamingTimeline();
+  return item;
 }
 
 function finishInterruptedStream(label: string): void {
@@ -2074,21 +2154,22 @@ function resetStreamingTimeline(): void {
 }
 
 function handleToolOutput(toolName: string, raw: string): void {
+  if (toolName !== "run_command") {
+    return;
+  }
   let value: unknown = raw;
   try {
     value = JSON.parse(raw);
   } catch {
     // Keep non-JSON tool output readable.
   }
-  if (toolName === "run_command" && isRecord(value)) {
+  if (isRecord(value)) {
     const command = typeof value.command === "string" ? `$ ${value.command}` : "";
     const stdout = typeof value.stdout === "string" ? value.stdout : "";
     const stderr = typeof value.stderr === "string" ? value.stderr : "";
     const status = commandStatus(value);
     appendOutput([command, stdout, stderr, status].filter(Boolean).join("\n"));
-    return;
   }
-  appendOutput(`${toolLabel(toolName)}: ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`);
 }
 
 function appendTimeline(
@@ -2285,7 +2366,10 @@ function appendOutput(text: string): void {
   if (!text) {
     return;
   }
-  if (outputLog.textContent === "等待 Agent 运行命令或工具…") {
+  if (
+    outputLog.textContent === "等待 Agent 运行命令或工具…" ||
+    outputLog.textContent === "命令输出会显示在这里；文件内容和工具摘要请在右侧过程区查看。"
+  ) {
     outputLog.textContent = "";
   }
   const combined = `${outputLog.textContent ?? ""}${outputLog.textContent ? "\n\n" : ""}${text}`;
@@ -2306,12 +2390,18 @@ function setRunning(isRunning: boolean, failed = false): void {
   memoryButton.disabled = isRunning || !project;
   attachmentsButton.disabled = isRunning || !project;
   contextPreviewButton.disabled = isRunning || !project;
+  executionModeInput.disabled = isRunning;
   newConversationButton.disabled = isRunning || !project;
   historyButton.disabled = !project;
   newFileButton.disabled = isRunning || !project || Boolean(manualEditor);
   if (!isRunning) {
     activeApproval = null;
     approvalPanel.hidden = true;
+    activePlanApproval = null;
+    planApprovalPanel.hidden = true;
+    if (latestPlan) {
+      renderPlan(latestPlan);
+    }
   }
   renderContinueHistoryButton();
   renderRestoreActions();
@@ -2331,6 +2421,7 @@ function showApproval(request: CommandApprovalRequest): void {
   approvalCommand.textContent = request.command;
   approvalCwd.textContent = `运行目录：${displayLocalPath(request.cwd)}`;
   appendTimeline("等待命令批准", request.command, "active");
+  planPanel.hidden = true;
   approvalPanel.hidden = false;
   approvalPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
@@ -2346,6 +2437,182 @@ async function answerApproval(event: MouseEvent, approved: boolean): Promise<voi
   approvalPanel.hidden = true;
   await api.answerApproval(request.id, approved);
   appendTimeline(approved ? "命令已允许" : "命令已拒绝", request.command, approved ? "success" : "error");
+  if (latestPlan) {
+    renderPlan(latestPlan);
+  }
+}
+
+function showPlanApproval(request: PlanApprovalRequest): void {
+  activePlanApproval = request;
+  planPanel.hidden = true;
+  planDraftItems = request.items.map((item) => ({ id: item.id, title: item.title }));
+  planApprovalTitle.textContent = request.reason === "revision"
+    ? `确认修订后的计划 · 第 ${request.revision} 版`
+    : "确认 Agent 的执行范围";
+  planApprovalExplanation.textContent = request.explanation;
+  renderPlanEditor();
+  appendTimeline(
+    request.reason === "revision" ? "等待计划变更确认" : "等待计划确认",
+    `${request.items.length} 个步骤；确认前不会写文件或运行命令。`,
+    "active",
+  );
+  planApprovalPanel.hidden = false;
+  planApprovalPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function renderPlanEditor(): void {
+  planEditorList.replaceChildren();
+  planDraftItems.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "plan-editor-row";
+    const number = document.createElement("span");
+    number.textContent = String(index + 1).padStart(2, "0");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 160;
+    input.value = item.title;
+    input.setAttribute("aria-label", `计划步骤 ${index + 1}`);
+    input.addEventListener("input", () => {
+      const current = planDraftItems[index];
+      if (current) current.title = input.value;
+    });
+    const actions = document.createElement("div");
+    actions.className = "plan-editor-actions";
+    const up = planEditorButton("↑", "上移", index === 0, () => movePlanStep(index, -1));
+    const down = planEditorButton(
+      "↓",
+      "下移",
+      index === planDraftItems.length - 1,
+      () => movePlanStep(index, 1),
+    );
+    const remove = planEditorButton("×", "删除", planDraftItems.length === 1, () => {
+      planDraftItems.splice(index, 1);
+      renderPlanEditor();
+    });
+    actions.append(up, down, remove);
+    row.append(number, input, actions);
+    planEditorList.append(row);
+  });
+  addPlanStepButton.disabled = planDraftItems.length >= 12;
+}
+
+function planEditorButton(
+  text: string,
+  label: string,
+  disabled: boolean,
+  action: () => void,
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = text;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.disabled = disabled;
+  button.addEventListener("click", action);
+  return button;
+}
+
+function movePlanStep(index: number, offset: -1 | 1): void {
+  const target = index + offset;
+  if (target < 0 || target >= planDraftItems.length) return;
+  const [item] = planDraftItems.splice(index, 1);
+  if (item) planDraftItems.splice(target, 0, item);
+  renderPlanEditor();
+}
+
+function addPlanStep(): void {
+  if (planDraftItems.length >= 12) {
+    notify("计划最多包含 12 个步骤。");
+    return;
+  }
+  planDraftItems.push({ title: "" });
+  renderPlanEditor();
+  planEditorList.querySelector<HTMLInputElement>(".plan-editor-row:last-child input")?.focus();
+}
+
+async function answerPlanApproval(approved: boolean): Promise<void> {
+  if (!activePlanApproval) {
+    planApprovalPanel.hidden = true;
+    return;
+  }
+  const items = planDraftItems
+    .map((item) => ({ id: item.id, title: item.title.trim() }))
+    .filter((item) => item.title);
+  if (approved && items.length !== planDraftItems.length) {
+    notify("请填写所有计划步骤，或删除空白步骤。");
+    return;
+  }
+  const request = activePlanApproval;
+  approvePlanButton.disabled = true;
+  rejectPlanButton.disabled = true;
+  try {
+    const accepted = await api.answerPlanApproval(request.id, { approved, items });
+    if (!accepted) {
+      notify("该计划确认已经失效。");
+      return;
+    }
+    activePlanApproval = null;
+    planApprovalPanel.hidden = true;
+    appendTimeline(
+      approved ? "计划已确认" : "计划已退回",
+      approved ? `将按你确认的 ${items.length} 个步骤执行。` : "Agent 会收到拒绝结果。",
+      approved ? "success" : "error",
+    );
+  } catch (error) {
+    notify(errorMessage(error));
+  } finally {
+    approvePlanButton.disabled = false;
+    rejectPlanButton.disabled = false;
+  }
+}
+
+function renderPlan(plan: PlanSnapshot): void {
+  planPanel.hidden = false;
+  planTitle.textContent = planStateLabel(plan.state);
+  const finished = plan.items.filter(
+    (item) => item.status === "completed" || item.status === "skipped",
+  ).length;
+  planProgress.textContent = `${finished} / ${plan.items.length}`;
+  planList.replaceChildren();
+  for (const item of plan.items) {
+    const row = document.createElement("li");
+    row.className = item.status;
+    row.textContent = item.title;
+    planList.append(row);
+  }
+  planEvidence.replaceChildren();
+  const evidenceRows = [
+    ...plan.verification.map((item) => `已核验 · ${item}`),
+    ...plan.remaining.map((item) => `未完成 · ${item}`),
+  ];
+  planEvidence.hidden = evidenceRows.length === 0;
+  if (evidenceRows.length > 0) {
+    for (const row of evidenceRows) {
+      const line = document.createElement("div");
+      line.textContent = row;
+      planEvidence.append(line);
+    }
+  }
+}
+
+function resetPlanUi(): void {
+  latestPlan = null;
+  activePlanApproval = null;
+  planDraftItems = [];
+  planPanel.hidden = true;
+  planApprovalPanel.hidden = true;
+  planList.replaceChildren();
+  planEvidence.replaceChildren();
+}
+
+function planStateLabel(state: PlanSnapshot["state"]): string {
+  return {
+    awaiting_approval: "等待确认",
+    active: "正在执行",
+    ready_to_finish: "等待完成核验",
+    completed: "计划已完成",
+    rejected: "计划未获批准",
+  }[state];
 }
 
 function toolLabel(name: string): string {
@@ -2356,6 +2623,9 @@ function toolLabel(name: string): string {
     replace_in_file: "修改文件",
     write_file: "写入文件",
     run_command: "运行命令",
+    propose_plan: "提交执行计划",
+    update_plan: "更新计划进度",
+    finish_task: "完成核验",
   };
   return labels[name] ?? name;
 }
@@ -2372,6 +2642,15 @@ function summarizeArguments(name: string, args: Record<string, unknown>): string
   }
   if (name === "list_files" && typeof args.glob === "string") {
     return args.glob;
+  }
+  if (name === "propose_plan" && Array.isArray(args.steps)) {
+    return `${args.steps.length} 个步骤`;
+  }
+  if (name === "update_plan" && Array.isArray(args.items)) {
+    return `${args.items.length} 个步骤`;
+  }
+  if (name === "finish_task" && Array.isArray(args.verification)) {
+    return `${args.verification.length} 项核验证据`;
   }
   return Object.keys(args).length ? JSON.stringify(args) : "准备执行";
 }
@@ -2525,6 +2804,12 @@ async function showHistoryConversation(source: RunHistoryDetail): Promise<void> 
   clearTimeline();
   for (const detail of chain) {
     appendHistoryRunToTimeline(detail);
+  }
+  if (source.plan) {
+    latestPlan = source.plan;
+    renderPlan(source.plan);
+  } else {
+    resetPlanUi();
   }
   renderTokenUsage(tokenUsageForHistory(source));
   timeline.scrollTop = timeline.scrollHeight;
@@ -2691,6 +2976,7 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
   if (detail.responseProfile) {
     context.append(historyChip(`响应 · ${responseProfileLabel(detail.responseProfile)}`));
   }
+  context.append(historyChip(detail.executionMode === "plan" ? "先规划" : "直接执行"));
   if (detail.skillIds.length > 0) {
     context.append(historyChip(`${detail.skillIds.length} 个 Skill`));
   }
@@ -2732,6 +3018,7 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
     eventList.append(historyLoading("没有可显示的过程事件。"));
   }
   events.append(eventList);
+  const plan = renderHistoryPlan(detail.plan);
 
   const files = document.createElement("section");
   files.className = "history-files";
@@ -2756,7 +3043,37 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
   if (context.childElementCount > 0) {
     historyDetail.append(context);
   }
+  if (plan) {
+    historyDetail.append(plan);
+  }
   historyDetail.append(events, files);
+}
+
+function renderHistoryPlan(plan: PlanSnapshot | undefined): HTMLElement | null {
+  if (!plan) return null;
+  const section = document.createElement("section");
+  section.className = "history-summary history-plan";
+  const title = document.createElement("strong");
+  title.textContent = `执行计划 · ${planStateLabel(plan.state)}`;
+  const list = document.createElement("ol");
+  for (const item of plan.items) {
+    const row = document.createElement("li");
+    row.className = item.status;
+    row.textContent = item.title;
+    list.append(row);
+  }
+  section.append(title, list);
+  if (plan.verification.length > 0) {
+    const evidence = document.createElement("p");
+    evidence.textContent = `核验：${plan.verification.join("；")}`;
+    section.append(evidence);
+  }
+  if (plan.remaining.length > 0) {
+    const remaining = document.createElement("p");
+    remaining.textContent = `遗留：${plan.remaining.join("；")}`;
+    section.append(remaining);
+  }
+  return section;
 }
 
 function renderEmptyHistoryDetail(): void {
@@ -2892,7 +3209,11 @@ function historyEventState(event: AgentEvent): "neutral" | "success" | "error" {
   if (event.type === "run_failed" || event.type === "run_cancelled") {
     return "error";
   }
-  if (event.type === "run_completed" || (event.type === "tool_finished" && !event.result.isError)) {
+  if (
+    event.type === "run_completed" ||
+    (event.type === "tool_finished" && !event.result.isError) ||
+    (event.type === "plan_updated" && event.plan.state === "completed")
+  ) {
     return "success";
   }
   return "neutral";
@@ -2914,6 +3235,10 @@ function historyEventText(event: AgentEvent): string {
       return `${toolLabel(event.name)} · ${summarizeArguments(event.name, event.arguments)}`;
     case "tool_finished":
       return `${toolLabel(event.name)}${event.result.isError ? "失败" : "完成"} · ${event.durationMs} ms`;
+    case "plan_updated":
+      return `计划更新 · 第 ${event.plan.revision} 版 · ${planStateLabel(event.plan.state)}`;
+    case "completion_blocked":
+      return `完成检查未通过 · ${event.message}`;
     case "run_completed":
       return `任务完成 · ${compactMarkdownText(event.summary)}`;
     case "run_cancelled":

@@ -76,10 +76,11 @@ describe("main-process IPC boundary", () => {
     await registerWithStores();
 
     const registered = electronMocks.handle.mock.calls.map((call) => call[0]);
-    expect(registered).toHaveLength(33);
-    expect(new Set(registered).size).toBe(33);
+    expect(registered).toHaveLength(34);
+    expect(new Set(registered).size).toBe(34);
     expect(registered).not.toContain(IPC_CHANNELS.agentEvent);
     expect(registered).not.toContain(IPC_CHANNELS.approvalRequested);
+    expect(registered).not.toContain(IPC_CHANNELS.planApprovalRequested);
     expect(registered).not.toContain(IPC_CHANNELS.changesUpdated);
   });
 
@@ -215,6 +216,14 @@ describe("main-process IPC boundary", () => {
     await expect(invoke(IPC_CHANNELS.answerApproval, 7, true)).resolves.toBe(false);
     await expect(invoke(IPC_CHANNELS.answerApproval, "missing", "yes")).resolves.toBe(false);
     await expect(invoke(IPC_CHANNELS.answerApproval, "missing", true)).resolves.toBe(false);
+    await expect(invoke(IPC_CHANNELS.answerPlanApproval, 7, {})).resolves.toBe(false);
+    await expect(invoke(IPC_CHANNELS.answerPlanApproval, "missing", {})).rejects.toThrow(
+      "计划确认内容无效",
+    );
+    await expect(invoke(IPC_CHANNELS.answerPlanApproval, "missing", {
+      approved: true,
+      items: [{ title: "检查文件" }],
+    })).resolves.toBe(false);
   });
 
   it("returns safe start/stop states without entering the model loop", async () => {
@@ -273,6 +282,9 @@ describe("main-process IPC boundary", () => {
     await expect(
       invoke(IPC_CHANNELS.startRun, { task: "Inspect", continueFromRunId: 7 }),
     ).rejects.toThrow("历史对话选择无效");
+    await expect(
+      invoke(IPC_CHANNELS.startRun, { task: "Inspect", executionMode: "automatic" }),
+    ).rejects.toThrow("执行模式无效");
     await expect(invoke(IPC_CHANNELS.previewRunContext, null)).rejects.toThrow(
       "任务请求无效",
     );

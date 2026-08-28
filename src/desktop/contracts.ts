@@ -1,4 +1,12 @@
-import type { AgentEvent, ChatMessage, CommandApprovalRequest } from "../core/protocol";
+import type {
+  AgentEvent,
+  ChatMessage,
+  CommandApprovalRequest,
+  ExecutionMode,
+  PlanApprovalDecision,
+  PlanApprovalRequest,
+  PlanSnapshot,
+} from "../core/protocol";
 
 export const MAX_TASK_CHARS = 20_000;
 export const MAX_ATTACHMENT_FILES = 8;
@@ -40,8 +48,10 @@ export const IPC_CHANNELS = {
   previewRunContext: "agent:preview-context",
   exportRunReport: "history:export-report",
   answerApproval: "agent:answer-approval",
+  answerPlanApproval: "agent:answer-plan-approval",
   agentEvent: "agent:event",
   approvalRequested: "agent:approval-requested",
+  planApprovalRequested: "agent:plan-approval-requested",
   changesUpdated: "agent:changes-updated",
 } as const;
 
@@ -132,6 +142,7 @@ export interface ModelProfileInput extends SettingsInput {
 
 export interface RunRequest {
   task: string;
+  executionMode?: ExecutionMode;
   selectedFile?: string;
   attachmentPaths?: string[];
   skillIds?: string[];
@@ -166,6 +177,7 @@ export interface RunHistorySummary {
   modelProfileName?: string;
   permissionMode?: PermissionMode;
   responseProfile?: ResponseProfile;
+  executionMode?: ExecutionMode;
   continuedFromRunId?: string;
   eventCount: number;
   changedFiles: string[];
@@ -176,6 +188,7 @@ export interface RunHistorySummary {
 export interface RunHistoryDetail extends RunHistorySummary {
   events: AgentEvent[];
   messages: ChatMessage[];
+  plan?: PlanSnapshot;
 }
 
 export interface DeleteConversationResult {
@@ -237,6 +250,7 @@ export interface RunContextPreview {
   model: string;
   permissionMode: PermissionMode;
   responseProfile: ResponseProfile;
+  executionMode: ExecutionMode;
   selectedFile?: string;
   skills: Array<{ name: string; relativePath: string; contentChars: number }>;
   memoryChars: number;
@@ -284,7 +298,9 @@ export interface DesktopApi {
   restoreChanges(request: RestoreChangedFilesRequest): Promise<RestoreChangedFilesResult>;
   previewRunContext(request: RunRequest): Promise<RunContextPreview>;
   answerApproval(id: string, approved: boolean): Promise<boolean>;
+  answerPlanApproval(id: string, decision: PlanApprovalDecision): Promise<boolean>;
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   onApprovalRequested(listener: (request: CommandApprovalRequest) => void): () => void;
+  onPlanApprovalRequested(listener: (request: PlanApprovalRequest) => void): () => void;
   onChangesUpdated(listener: (changes: ChangedFileSnapshot[]) => void): () => void;
 }

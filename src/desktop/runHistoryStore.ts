@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AgentEvent, ChatMessage } from "../core/protocol";
+import type { AgentEvent, ChatMessage, PlanSnapshot } from "../core/protocol";
 import type {
   RunHistoryDetail,
   RunHistoryStatus,
@@ -36,6 +36,7 @@ export interface StartRunHistoryInput {
   modelProfileName?: string;
   permissionMode?: RunHistorySummary["permissionMode"];
   responseProfile?: RunHistorySummary["responseProfile"];
+  executionMode?: RunHistorySummary["executionMode"];
   continuedFromRunId?: string;
 }
 
@@ -46,6 +47,7 @@ export interface FinishRunHistoryInput {
   events: readonly AgentEvent[];
   messages: readonly ChatMessage[];
   changedFiles: readonly string[];
+  plan?: PlanSnapshot;
 }
 
 export class RunHistoryStore {
@@ -73,6 +75,7 @@ export class RunHistoryStore {
       modelProfileName: input.modelProfileName?.slice(0, 80),
       permissionMode: input.permissionMode,
       responseProfile: input.responseProfile,
+      executionMode: input.executionMode ?? "direct",
       continuedFromRunId: input.continuedFromRunId,
       eventCount: 0,
       changedFiles: [],
@@ -123,7 +126,12 @@ export class RunHistoryStore {
       changedFiles: Array.from(new Set(input.changedFiles)).slice(0, 200),
       updatedAt,
     };
-    const detail: RunHistoryDetail = { ...summary, events, messages };
+    const detail: RunHistoryDetail = {
+      ...summary,
+      events,
+      messages,
+      plan: input.plan ? sanitizePlan(input.plan) : undefined,
+    };
     await this.#writeJson(this.#runFile(project.directory, id), detail);
     await this.#writeJson(this.#indexFile(project.directory), {
       ...index,
@@ -301,6 +309,7 @@ function normalizeInterrupted<T extends RunHistorySummary>(
     ...run,
     attachmentPaths: Array.isArray(run.attachmentPaths) ? run.attachmentPaths : [],
     memoryUsed: run.memoryUsed === true,
+    executionMode: run.executionMode === "plan" ? "plan" : "direct",
   };
   return (normalized.status === "running" && normalized.id !== activeRunId
     ? { ...normalized, status: "interrupted", summary: "应用关闭前任务未正常结束。" }
@@ -339,6 +348,21 @@ function sanitizeMessage(message: ChatMessage): ChatMessage {
         })),
       };
   }
+}
+
+function sanitizePlan(plan: PlanSnapshot): PlanSnapshot {
+  return {
+    revision: Math.max(1, Math.trunc(plan.revision)),
+    state: plan.state,
+    explanation: plan.explanation.slice(0, 600),
+    items: plan.items.slice(0, 12).map((item) => ({
+      id: item.id.slice(0, 160),
+      title: item.title.slice(0, 160),
+      status: item.status,
+    })),
+    verification: plan.verification.slice(0, 12).map((item) => item.slice(0, 300)),
+    remaining: plan.remaining.slice(0, 12).map((item) => item.slice(0, 300)),
+  };
 }
 
 function conversationMessagesForRun(run: RunHistoryDetail): ChatMessage[] {
