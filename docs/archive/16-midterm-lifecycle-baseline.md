@@ -79,7 +79,7 @@
 | P1 功能 | Skill、Memory、附件、权限/模型/响应档位、Token、上下文管理体验 | 核心已实现，可做低风险完善 |
 | P2/范围外 | 多 Agent、多人协作、完整 IDE、调试器、Git 客户端、云端执行、自动长期记忆 | 本次不做 |
 
-功能需求的权威清单见 [01-product-requirements.md](01-product-requirements.md)，实现和证据映射见 [08-traceability.md](08-traceability.md)。
+功能需求的权威清单见 [01-product-requirements.md](../product/01-product-requirements.md)，实现和证据映射见 [08-traceability.md](../quality/08-traceability.md)。
 
 ### 4.2 用例组合与验收重点
 
@@ -123,7 +123,7 @@ flowchart LR
 | 工具层 | 项目内读、搜、改、写和批准后命令执行 | 绕过项目根、审批、大小和超时限制 |
 | 模型适配层 | HTTP/SSE、协议聚合、usage 和错误分类 | 执行本地副作用 |
 
-详细架构、状态机和错误表见 [03-system-design.md](03-system-design.md)，完整数据流见 [11-agent-data-flow.md](11-agent-data-flow.md)。
+详细架构、状态机和错误表见 [03-system-design.md](../architecture/03-system-design.md)，完整数据流见 [11-agent-data-flow.md](../architecture/11-agent-data-flow.md)。
 
 ### 5.3 关键质量场景
 
@@ -338,7 +338,7 @@ LocalForge 的质量定义为：真实、可控、可观察、可复现。模型
 | A-08 | 凭据与交付扫描 | Key、环境文件、PDF/视频/zip 不误入 Git | 脚本 + 人工 |
 | A-09 | 视频材料 | 小于两分钟和 200 MB，无用户名/Key | 人工，工具可辅助 |
 
-详细 35 个核心测试场景见 [06-test-plan.md](06-test-plan.md)。
+详细 35 个核心测试场景见 [06-test-plan.md](../quality/06-test-plan.md)。
 
 ## 11. 配置、发布与文档管理
 
@@ -374,7 +374,7 @@ LocalForge 的质量定义为：真实、可控、可观察、可复现。模型
 | 视频超时/证据不足 | 中概率、高影响 | 09-01 三次计时彩排，保留读—改—测、审批、Diff 和架构台词 |
 | 安装包延误 | 中概率、中影响 | 先满足源码运行和规定材料；安装包按题目必要性决定 |
 
-完整风险登记和降级方案见 [07-risk-and-quality.md](07-risk-and-quality.md)。
+完整风险登记和降级方案见 [07-risk-and-quality.md](../quality/07-risk-and-quality.md)。
 
 ## 13. 中期评审结论与下一步
 
@@ -392,15 +392,15 @@ LocalForge 的质量定义为：真实、可控、可观察、可复现。模型
 
 | 生命周期活动 | 权威文档 |
 | --- | --- |
-| 产品与需求 | [01-product-requirements.md](01-product-requirements.md) |
-| 用例分析 | [02-use-cases.md](02-use-cases.md) |
-| 软件架构与详细设计 | [03-system-design.md](03-system-design.md)、[11-agent-data-flow.md](11-agent-data-flow.md) |
-| UI 原型 | [04-ui-prototype.md](04-ui-prototype.md) |
-| 计划、里程碑和估算 | [05-project-plan.md](05-project-plan.md)、本文第 6 节 |
-| 测试计划与证据 | [06-test-plan.md](06-test-plan.md)、[14-real-model-validation.md](14-real-model-validation.md) |
-| 质量、风险和合规 | [07-risk-and-quality.md](07-risk-and-quality.md)、[13-assessment-compliance.md](13-assessment-compliance.md) |
-| 需求追踪 | [08-traceability.md](08-traceability.md) |
-| 真实开发过程 | [09-development-log.md](09-development-log.md) |
-| 后续优化 | [10-optimization-roadmap.md](10-optimization-roadmap.md) |
-| 演示与答辩 | [12-demo-video-script.md](12-demo-video-script.md)、[15-interview-defense.md](15-interview-defense.md) |
-| 架构决策 | [decisions/0001-vscode-extension.md](decisions/0001-vscode-extension.md)、[decisions/0002-standalone-desktop.md](decisions/0002-standalone-desktop.md) |
+| 产品与需求 | [01-product-requirements.md](../product/01-product-requirements.md) |
+| 用例分析 | [02-use-cases.md](../product/02-use-cases.md) |
+| 软件架构与详细设计 | [03-system-design.md](../architecture/03-system-design.md)、[11-agent-data-flow.md](../architecture/11-agent-data-flow.md) |
+| UI 原型 | [04-ui-prototype.md](../architecture/04-ui-prototype.md) |
+| 计划、里程碑和估算 | [05-project-plan.md](../process/05-project-plan.md)、本文第 6 节 |
+| 测试计划与证据 | [06-test-plan.md](../quality/06-test-plan.md)、[14-real-model-validation.md](../quality/14-real-model-validation.md) |
+| 质量、风险和合规 | [07-risk-and-quality.md](../quality/07-risk-and-quality.md)、[13-assessment-compliance.md](../delivery/13-assessment-compliance.md) |
+| 需求追踪 | [08-traceability.md](../quality/08-traceability.md) |
+| 真实开发过程 | [09-development-log.md](../process/09-development-log.md) |
+| 后续优化 | [10-optimization-roadmap.md](../process/10-optimization-roadmap.md) |
+| 演示与答辩 | [12-demo-video-script.md](../delivery/12-demo-video-script.md)、[15-interview-defense.md](../delivery/15-interview-defense.md) |
+| 架构决策 | [decisions/0001-vscode-extension.md](../architecture/decisions/0001-vscode-extension.md)、[decisions/0002-standalone-desktop.md](../architecture/decisions/0002-standalone-desktop.md) |

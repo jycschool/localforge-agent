@@ -63,4 +63,4 @@
 | 验证 | 候选构建 | 118 项测试、真实模型、桌面检查、交付脚本 | 无阻塞缺陷、演示稳定 | 进行中 |
 | 发布 | 验证通过的提交 | 视频、README.txt、最终推送和压缩包 | 20:00 冻结并复核材料 | 待执行 |
 
-阶段门禁、工作量估算、效能指标和流水线设计统一见 [16-midterm-lifecycle-baseline.md](16-midterm-lifecycle-baseline.md)。该表追踪过程状态，不替代上方 FR/NFR 的实现追踪。
+阶段门禁、工作量估算、效能指标和流水线设计统一见 [16-midterm-lifecycle-baseline.md](../archive/16-midterm-lifecycle-baseline.md)。该表追踪过程状态，不替代上方 FR/NFR 的实现追踪。

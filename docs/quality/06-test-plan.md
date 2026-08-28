@@ -152,4 +152,4 @@
 
 当前本地流水线已经串联类型检查、118 项测试、构建和交付检查；GitHub Actions 尚未建立，状态不能写成“已完成”。计划的远端流水线使用 Windows、锁定的 Node/pnpm 和 `--frozen-lockfile`，执行 `verify` 与 `verify:delivery`，但不注入 ModelScope Token、不运行真实模型任务。
 
-测试完善优先级为：先建立确定性远端门禁；再为新增状态逻辑补纯函数测试；最后固化桌面人工烟雾表。冻结前不为了追求形式覆盖率引入不稳定的重型 UI 自动化框架。总体流水线、缺口和系统验收矩阵见 [16-midterm-lifecycle-baseline.md](16-midterm-lifecycle-baseline.md)。
+测试完善优先级为：先建立确定性远端门禁；再为新增状态逻辑补纯函数测试；最后固化桌面人工烟雾表。冻结前不为了追求形式覆盖率引入不稳定的重型 UI 自动化框架。总体流水线、缺口和系统验收矩阵见 [16-midterm-lifecycle-baseline.md](../archive/16-midterm-lifecycle-baseline.md)。

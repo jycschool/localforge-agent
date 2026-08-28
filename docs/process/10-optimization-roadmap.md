@@ -2,7 +2,7 @@
 
 ## 1. 文档边界
 
-本文件只维护 **2026 年 9 月 2 日截止前尚未完成的工作**。已实现功能和实际验证结果统一记录在 [09-development-log.md](09-development-log.md)，需求完成度见 [08-traceability.md](08-traceability.md)，因此不在路线图中重复维护完整功能清单。
+本文件只维护 **2026 年 9 月 2 日截止前尚未完成的工作**。已实现功能和实际验证结果统一记录在 [09-development-log.md](09-development-log.md)，需求完成度见 [08-traceability.md](../quality/08-traceability.md)，因此不在路线图中重复维护完整功能清单。
 
 当前 Agent 核心、桌面工作台、上下文管理、安全控制和真实模型闭环已形成稳定基线。后续优化以减少交付风险为目标，不以增加功能数量为目标。
 
