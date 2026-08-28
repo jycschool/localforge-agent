@@ -56,7 +56,7 @@ try {
   $brokenLinks = [System.Collections.Generic.List[string]]::new()
   Get-ChildItem -LiteralPath "docs" -Filter "*.md" -Recurse | ForEach-Object {
     $source = $_
-    $markdown = Get-Content -LiteralPath $source.FullName -Raw
+    $markdown = Get-Content -LiteralPath $source.FullName -Raw -Encoding UTF8
     [regex]::Matches($markdown, '\]\(([^)]+)\)') | ForEach-Object {
       $target = $_.Groups[1].Value.Split("#")[0]
       if ($target -and $target -notmatch '^(https?:|mailto:)') {
