@@ -1,5 +1,7 @@
 # LocalForge
 
+[![Windows 质量门禁](https://github.com/jycschool/localforge-agent/actions/workflows/windows-quality-gate.yml/badge.svg)](https://github.com/jycschool/localforge-agent/actions/workflows/windows-quality-gate.yml)
+
 LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用 Codex 风格的工作台：左侧显示项目结构与变更文件，中间提供代码预览、轻量手动编辑和任务前后差异，右侧以连续可滚动会话展示用户问题、Agent 流式回复、工具时间线和命令审批。
 
 公开仓库：https://github.com/jycschool/localforge-agent
@@ -51,6 +53,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-short
 此后双击桌面的 `LocalForge` 即可直接启动现有 `dist` 构建，不会弹出命令行窗口。源码变化后先运行一次 `pnpm run build`；如果移动项目目录或重新安装依赖，应重新创建快捷方式。该方式依赖本机项目目录与 `node_modules`，不是可分发安装包。
 
 开发冻结前可运行 `pnpm run verify` 完成类型检查、118 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+
+仓库同时配置了 Windows GitHub Actions 质量门禁：推送到 `main`、提交 Pull Request 或手动触发时，会在不注入真实模型 Token 的干净环境中安装锁定依赖，并依次执行类型检查、自动化测试、构建和交付检查。
 
 录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
 

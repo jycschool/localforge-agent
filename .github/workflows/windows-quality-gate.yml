@@ -1,0 +1,50 @@
+name: Windows 质量门禁
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 类型检查、测试、构建与交付检查
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出完整仓库历史
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 安装 pnpm 与 Node.js
+        uses: pnpm/setup@v2
+        with:
+          runtime: node@22.12.0
+          cache: true
+          install: false
+
+      - name: 安装锁定依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript 类型检查
+        run: pnpm run check
+
+      - name: 运行自动化测试
+        run: pnpm test
+
+      - name: 构建桌面应用
+        run: pnpm run build
+
+      - name: 检查交付材料与仓库安全
+        run: pnpm run verify:delivery
