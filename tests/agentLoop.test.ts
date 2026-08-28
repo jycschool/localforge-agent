@@ -42,6 +42,52 @@ const echoTool: AgentTool = {
 };
 
 describe("AgentLoop", () => {
+  it("forwards visible model deltas before the complete assistant message", async () => {
+    const model: ModelClient = {
+      async complete(_messages, _tools, _signal, onTextDelta) {
+        onTextDelta?.("流式");
+        onTextDelta?.("完成");
+        return { role: "assistant", content: "流式完成" };
+      },
+    };
+    const events: AgentEvent[] = [];
+    const result = await new AgentLoop(model, new ToolRegistry([])).run(
+      defaultOptions(events),
+    );
+
+    expect(result.status).toBe("completed");
+    expect(events).toContainEqual({ type: "assistant_delta", step: 1, text: "流式" });
+    expect(events).toContainEqual({ type: "assistant_delta", step: 1, text: "完成" });
+    expect(events.findIndex((event) => event.type === "assistant_delta")).toBeLessThan(
+      events.findIndex((event) => event.type === "assistant_message"),
+    );
+  });
+
+  it("reports cumulative token usage from the model client", async () => {
+    const model: ModelClient = {
+      async complete(_messages, _tools, _signal, _onTextDelta, onUsage) {
+        onUsage?.({
+          promptTokens: 120,
+          completionTokens: 30,
+          totalTokens: 150,
+          estimated: false,
+        });
+        return { role: "assistant", content: "Finished." };
+      },
+    };
+    const events: AgentEvent[] = [];
+    await new AgentLoop(model, new ToolRegistry([])).run(defaultOptions(events));
+
+    expect(events).toContainEqual({
+      type: "model_usage",
+      step: 1,
+      promptTokens: 120,
+      completionTokens: 30,
+      totalTokens: 150,
+      estimated: false,
+    });
+  });
+
   it("completes immediately when the model returns text", async () => {
     const loop = new AgentLoop(
       new ScriptedModel([{ role: "assistant", content: "Finished." }]),
@@ -52,7 +98,50 @@ describe("AgentLoop", () => {
 
     expect(result.status).toBe("completed");
     expect(result.summary).toBe("Finished.");
+    expect(events[0]).toMatchObject({ type: "run_started", task: "Do a task" });
     expect(events.at(-1)?.type).toBe("run_completed");
+  });
+
+  it("can display the original user task while the model receives added context", async () => {
+    const loop = new AgentLoop(
+      new ScriptedModel([{ role: "assistant", content: "Finished." }]),
+      new ToolRegistry([]),
+    );
+    const events: AgentEvent[] = [];
+
+    await loop.run({
+      ...defaultOptions(events),
+      task: "Inspect.\n\nThe user has src/main.ts selected.",
+      displayTask: "Inspect.",
+    });
+
+    expect(events[0]).toEqual({ type: "run_started", task: "Inspect." });
+  });
+
+  it("places a selected historical conversation before the new user message", async () => {
+    let receivedMessages: readonly ChatMessage[] = [];
+    const model: ModelClient = {
+      async complete(messages) {
+        receivedMessages = structuredClone(messages);
+        return { role: "assistant", content: "Continued." };
+      },
+    };
+    const events: AgentEvent[] = [];
+    await new AgentLoop(model, new ToolRegistry([])).run({
+      ...defaultOptions(events),
+      task: "What should I do next?",
+      previousMessages: [
+        { role: "user", content: "Inspect the login flow." },
+        { role: "assistant", content: "The validation is incomplete." },
+      ],
+    });
+
+    expect(receivedMessages).toEqual([
+      { role: "system", content: "You are a test agent." },
+      { role: "user", content: "Inspect the login flow." },
+      { role: "assistant", content: "The validation is incomplete." },
+      { role: "user", content: "What should I do next?" },
+    ]);
   });
 
   it("fails instead of reporting success for an empty model response", async () => {
@@ -131,7 +220,60 @@ describe("AgentLoop", () => {
     const result = await loop.run({ ...defaultOptions(events), maxSteps: 2 });
 
     expect(result.status).toBe("failed");
-    expect(result.summary).toContain("2-step limit");
+    expect(result.summary).toContain("已达到 2 步运行上限");
+    expect(events.at(-1)).toMatchObject({
+      type: "run_failed",
+      reason: "max_steps",
+      steps: 2,
+    });
+  });
+
+  it("stops an identical failing tool-call loop before exhausting all steps", async () => {
+    const invalidReadCalls = Array.from({ length: 4 }, (_, index) => ({
+      role: "assistant" as const,
+      content: null,
+      tool_calls: [
+        {
+          id: `read-${index}`,
+          type: "function" as const,
+          function: { name: "read_file", arguments: "{}" },
+        },
+      ],
+    }));
+    const readFileTool: AgentTool = {
+      schema: {
+        type: "function",
+        function: {
+          name: "read_file",
+          description: "Read a file.",
+          parameters: {
+            type: "object",
+            properties: { path: { type: "string" } },
+            required: ["path"],
+          },
+        },
+      },
+      async execute() {
+        return {
+          content: JSON.stringify({ error: "path must be a non-empty string." }),
+          isError: true,
+        };
+      },
+    };
+    const loop = new AgentLoop(
+      new ScriptedModel(invalidReadCalls),
+      new ToolRegistry([readFileTool]),
+    );
+    const events: AgentEvent[] = [];
+    const result = await loop.run({ ...defaultOptions(events), maxSteps: 12 });
+
+    expect(result.status).toBe("failed");
+    expect(result.steps).toBe(3);
+    expect(result.summary).toContain("连续 3 次");
+    expect(result.summary).toContain("read_file");
+    expect(result.summary).toContain("path must be a non-empty string");
+    expect(events.filter((event) => event.type === "tool_finished")).toHaveLength(3);
+    expect(events.at(-1)).toMatchObject({ type: "run_failed", steps: 3 });
   });
 
   it("reports cancellation", async () => {

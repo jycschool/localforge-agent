@@ -43,6 +43,7 @@ describe("project context store", () => {
       description: "Run the smallest relevant test before the full suite.",
     });
     expect(skills[0]?.content).toContain("smallest relevant test");
+    expect(skills[0]?.contentChars).toBeGreaterThan(0);
   });
 
   it("saves private memory outside the project and isolates it by project", async () => {
@@ -56,6 +57,7 @@ describe("project context store", () => {
     expect(await store.getMemory(secondProject)).toBe("");
     const context = await store.getContext(projectPath);
     expect(context.memory).toContain("Chinese");
+    expect(context.memoryUpdatedAt).toMatch(/^\d{4}-/);
     expect(context.maxSelectedSkills).toBe(8);
   });
 
@@ -68,6 +70,65 @@ describe("project context store", () => {
     await expect(store.saveMemory(projectPath, "x".repeat(MAX_MEMORY_CHARS + 1))).rejects.toThrow(
       "项目记忆最多",
     );
+  });
+
+  it("deletes memory instead of retaining an empty storage record", async () => {
+    const store = new ProjectContextStore(storagePath);
+    await store.saveMemory(projectPath, "temporary preference");
+
+    await store.deleteMemory(projectPath);
+
+    expect(await store.getMemory(projectPath)).toBe("");
+    await expect(store.deleteMemory(projectPath)).resolves.toMatchObject({
+      memory: "",
+      memoryUpdatedAt: null,
+    });
+  });
+
+  it("creates, reads, edits, and deletes project Skill files", async () => {
+    const store = new ProjectContextStore(storagePath);
+    const id = ".localforge/skills/test-first.md";
+
+    let context = await store.saveSkill(projectPath, {
+      fileName: "test-first.md",
+      content: "# Test first\n\nRun the focused test.\n",
+    });
+    expect(context.skills).toMatchObject([{ id, name: "Test first" }]);
+    await expect(store.getSkill(projectPath, id)).resolves.toMatchObject({
+      content: "# Test first\n\nRun the focused test.\n",
+    });
+
+    context = await store.saveSkill(projectPath, {
+      id,
+      fileName: "test-first.md",
+      content: "# Test first\n\nRun the full verification.\n",
+    });
+    expect(context.skills[0]?.description).toBe("Run the full verification.");
+
+    context = await store.deleteSkill(projectPath, id);
+    expect(context.skills).toEqual([]);
+    await expect(store.getSkill(projectPath, id)).rejects.toThrow("找不到");
+  });
+
+  it("rejects unsafe, duplicate, empty, or silently renamed Skill writes", async () => {
+    const store = new ProjectContextStore(storagePath);
+    await expect(
+      store.saveSkill(projectPath, { fileName: "../escape.md", content: "# Unsafe" }),
+    ).rejects.toThrow("文件名");
+    await expect(
+      store.saveSkill(projectPath, { fileName: "empty.md", content: "   " }),
+    ).rejects.toThrow("不能为空");
+    await store.saveSkill(projectPath, { fileName: "safe.md", content: "# Safe" });
+    await expect(
+      store.saveSkill(projectPath, { fileName: "safe.md", content: "# Duplicate" }),
+    ).rejects.toThrow("同名");
+    await expect(
+      store.saveSkill(projectPath, {
+        id: ".localforge/skills/safe.md",
+        fileName: "renamed.md",
+        content: "# Renamed",
+      }),
+    ).rejects.toThrow("不能同时修改文件名");
   });
 
   it("returns only skills explicitly selected by the renderer", async () => {

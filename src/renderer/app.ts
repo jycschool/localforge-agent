@@ -1,18 +1,25 @@
-import type { AgentEvent, CommandApprovalRequest } from "../core/protocol";
+import type { AgentEvent, CommandApprovalRequest, TokenUsage } from "../core/protocol";
 import {
+  MAX_ATTACHMENT_FILES,
   MAX_TASK_CHARS,
   type ChangedFileSnapshot,
   type DesktopApi,
+  type ModelProfileInput,
+  type ModelProfilesSnapshot,
+  type ModelProfileSummary,
   type ProjectContextSnapshot,
   type ProjectSnapshot,
   type PublicSettings,
   type RunHistoryDetail,
   type RunHistoryStatus,
   type RunHistorySummary,
+  type RunRequest,
 } from "../desktop/contracts";
 import { fileVisualFor } from "./fileIcons";
 import { displayLocalPath } from "./pathDisplay";
+import { rankQuickOpen, type QuickOpenMatch } from "./quickOpen";
 import { compactMarkdownText, parseSafeMarkdown, type InlineToken } from "./safeMarkdown";
+import { clearTaskDraft, loadTaskDraft, saveTaskDraft } from "./taskDraft";
 
 declare global {
   interface Window {
@@ -32,20 +39,53 @@ let project: ProjectSnapshot | null = null;
 let selectedFile: string | null = null;
 let changes: ChangedFileSnapshot[] = [];
 let currentSettings: PublicSettings | null = null;
+let modelProfiles: ModelProfilesSnapshot = {
+  activeProfileId: "",
+  profiles: [],
+  maxProfiles: 12,
+};
+let editingModelProfileId: string | null = null;
+let modelProfileDeleteArmed = false;
 let activeApproval: CommandApprovalRequest | null = null;
 let runHistory: RunHistorySummary[] = [];
 let projectContext: ProjectContextSnapshot = {
   skills: [],
   memory: "",
+  memoryUpdatedAt: null,
   maxMemoryChars: 12_000,
   maxSelectedSkills: 8,
 };
 const selectedSkillIds = new Set<string>();
-let approvalAnswered = false;
 let toastTimer: number | undefined;
 let treeInitialized = false;
 let lastAssistantMessage = "";
+let runIsActive = false;
+let memoryEnabled = false;
+let memorySelectionInitialized = false;
+let conversationHydrated = false;
+let selectedHistoryId: string | null = null;
+let selectedHistoryDetail: RunHistoryDetail | null = null;
+let continuationSource: RunHistoryDetail | null = null;
+let activeConversationRunId: string | null = null;
+let editingSkillId: string | null = null;
+let skillDeleteConfirmId: string | null = null;
+let memoryDeleteArmed = false;
+let conversationDeleteArmed = false;
+let attachmentPaths: string[] = [];
+let streamingAssistantText = "";
+let streamingStep = 0;
+let streamingTimelineItem: HTMLElement | null = null;
+let streamingAnimationFrame: number | undefined;
+let draftSaveTimer: number | undefined;
+let previewCopyPath = "";
+let previewCopyContent = "";
+let activeDiffPath: string | null = null;
+let restoreArmKey: string | null = null;
+let quickOpenMatches: QuickOpenMatch[] = [];
+let quickOpenSelectionIndex = 0;
 const expandedDirectories = new Set<string>();
+const MAX_TIMELINE_ITEMS = 500;
+const MAX_CONVERSATION_HISTORY_RUNS = 12;
 
 const openProjectButton = element<HTMLButtonElement>("open-project");
 const welcomeOpenProjectButton = element<HTMLButtonElement>("welcome-open-project");
@@ -59,46 +99,90 @@ const previewTitle = element<HTMLElement>("preview-title");
 const previewMeta = element<HTMLElement>("preview-meta");
 const previewMode = element<HTMLElement>("preview-mode");
 const previewContent = element<HTMLElement>("preview-content");
+const copyFilePathButton = element<HTMLButtonElement>("copy-file-path");
+const copyFileContentButton = element<HTMLButtonElement>("copy-file-content");
+const restoreFileChangeButton = element<HTMLButtonElement>("restore-file-change");
+const restoreAllChangesButton = element<HTMLButtonElement>("restore-all-changes");
 const outputLog = element<HTMLElement>("output-log");
 const clearOutputButton = element<HTMLButtonElement>("clear-output");
 const timeline = element<HTMLElement>("timeline");
 const runStatus = element<HTMLElement>("run-status");
+const tokenUsage = element<HTMLElement>("token-usage");
+const newConversationButton = element<HTMLButtonElement>("new-conversation");
 const historyButton = element<HTMLButtonElement>("history-button");
 const historyCount = element<HTMLElement>("history-count");
 const stopRunButton = element<HTMLButtonElement>("stop-run");
 const taskForm = element<HTMLFormElement>("task-form");
 const taskInput = element<HTMLTextAreaElement>("task-input");
 taskInput.maxLength = MAX_TASK_CHARS;
+const defaultTaskPlaceholder = taskInput.placeholder;
 const startRunButton = element<HTMLButtonElement>("start-run");
 const selectedContext = element<HTMLElement>("selected-context");
+const attachmentsButton = element<HTMLButtonElement>("attachments-button");
+const attachmentsBadge = element<HTMLElement>("attachments-badge");
+const attachmentList = element<HTMLElement>("attachment-list");
+const continuationContext = element<HTMLElement>("continuation-context");
+const continuationTitle = element<HTMLElement>("continuation-title");
+const clearContinuationButton = element<HTMLButtonElement>("clear-continuation");
 const skillsButton = element<HTMLButtonElement>("skills-button");
 const skillsBadge = element<HTMLElement>("skills-badge");
 const memoryButton = element<HTMLButtonElement>("memory-button");
 const memoryBadge = element<HTMLElement>("memory-badge");
+const contextPreviewButton = element<HTMLButtonElement>("context-preview-button");
+const contextPreviewDialog = element<HTMLDialogElement>("context-preview-dialog");
+const contextPreviewContent = element<HTMLElement>("context-preview-content");
 const skillsDialog = element<HTMLDialogElement>("skills-dialog");
 const skillList = element<HTMLElement>("skill-list");
 const refreshSkillsButton = element<HTMLButtonElement>("refresh-skills");
+const newSkillButton = element<HTMLButtonElement>("new-skill");
+const skillEditorDialog = element<HTMLDialogElement>("skill-editor-dialog");
+const skillEditorForm = element<HTMLFormElement>("skill-editor-form");
+const skillEditorTitle = element<HTMLElement>("skill-editor-title");
+const skillFileNameInput = element<HTMLInputElement>("skill-file-name");
+const skillContentInput = element<HTMLTextAreaElement>("skill-content");
+const skillEditorError = element<HTMLElement>("skill-editor-error");
+const closeSkillEditorButton = element<HTMLButtonElement>("close-skill-editor");
+const cancelSkillEditorButton = element<HTMLButtonElement>("cancel-skill-editor");
+const saveSkillButton = element<HTMLButtonElement>("save-skill");
 const memoryDialog = element<HTMLDialogElement>("memory-dialog");
 const memoryForm = element<HTMLFormElement>("memory-form");
 const memoryInput = element<HTMLTextAreaElement>("memory-input");
+const memoryEnabledInput = element<HTMLInputElement>("memory-enabled");
 const memoryCharacterCount = element<HTMLElement>("memory-character-count");
+const memoryUpdatedAt = element<HTMLElement>("memory-updated-at");
+const memoryPreview = element<HTMLElement>("memory-preview");
 const memoryError = element<HTMLElement>("memory-error");
 const closeMemoryButton = element<HTMLButtonElement>("close-memory");
 const cancelMemoryButton = element<HTMLButtonElement>("cancel-memory");
+const deleteMemoryButton = element<HTMLButtonElement>("delete-memory");
+const saveMemoryButton = element<HTMLButtonElement>("save-memory");
+const importMemoryButton = element<HTMLButtonElement>("import-memory");
+const exportMemoryButton = element<HTMLButtonElement>("export-memory");
 const settingsButton = element<HTMLButtonElement>("settings-button");
 const modelStatus = element<HTMLElement>("model-status");
+const modelProfileSwitch = element<HTMLSelectElement>("model-profile-switch");
 const settingsDialog = element<HTMLDialogElement>("settings-dialog");
 const settingsForm = element<HTMLFormElement>("settings-form");
+const settingsProfileSelect = element<HTMLSelectElement>("settings-profile-select");
+const profileNameInput = element<HTMLInputElement>("profile-name");
+const newModelProfileButton = element<HTMLButtonElement>("new-model-profile");
+const deleteModelProfileButton = element<HTMLButtonElement>("delete-model-profile");
+const profileCount = element<HTMLElement>("profile-count");
 const apiBaseUrlInput = element<HTMLInputElement>("api-base-url");
 const modelNameInput = element<HTMLInputElement>("model-name");
+const modelPresetInput = element<HTMLSelectElement>("model-preset");
 const apiKeyInput = element<HTMLInputElement>("api-key");
 const apiKeyHelp = element<HTMLElement>("api-key-help");
 const useModelScopePresetButton = element<HTMLButtonElement>("use-modelscope-preset");
 const openModelScopeTokenButton = element<HTMLButtonElement>("open-modelscope-token");
 const maxStepsInput = element<HTMLInputElement>("max-steps");
 const commandTimeoutInput = element<HTMLInputElement>("command-timeout");
+const permissionModeInput = element<HTMLSelectElement>("permission-mode");
+const responseProfileInput = element<HTMLSelectElement>("response-profile");
 const settingsError = element<HTMLElement>("settings-error");
-const approvalDialog = element<HTMLDialogElement>("approval-dialog");
+const testModelButton = element<HTMLButtonElement>("test-model");
+const modelDiagnostic = element<HTMLElement>("model-diagnostic");
+const approvalPanel = element<HTMLElement>("approval-dialog");
 const approvalReason = element<HTMLElement>("approval-reason");
 const approvalCommand = element<HTMLElement>("approval-command");
 const approvalCwd = element<HTMLElement>("approval-cwd");
@@ -107,6 +191,14 @@ const rejectCommandButton = element<HTMLButtonElement>("reject-command");
 const historyDialog = element<HTMLDialogElement>("history-dialog");
 const historyList = element<HTMLElement>("history-list");
 const historyDetail = element<HTMLElement>("history-detail");
+const continueHistoryButton = element<HTMLButtonElement>("continue-history");
+const deleteConversationButton = element<HTMLButtonElement>("delete-conversation");
+const exportRunReportButton = element<HTMLButtonElement>("export-run-report");
+const quickOpenDialog = element<HTMLDialogElement>("quick-open-dialog");
+const quickOpenForm = element<HTMLFormElement>("quick-open-form");
+const quickOpenInput = element<HTMLInputElement>("quick-open-input");
+const quickOpenCount = element<HTMLElement>("quick-open-count");
+const quickOpenList = element<HTMLElement>("quick-open-list");
 const toast = element<HTMLElement>("toast");
 const workbench = element<HTMLElement>("workbench");
 const leftResizer = element<HTMLElement>("left-resizer");
@@ -119,28 +211,63 @@ clearOutputButton.addEventListener("click", () => {
   outputLog.textContent = "等待 Agent 运行命令或工具…";
 });
 settingsButton.addEventListener("click", () => void openSettings());
+modelProfileSwitch.addEventListener("change", () => void switchModelProfile());
+newConversationButton.addEventListener("click", newConversation);
 historyButton.addEventListener("click", () => void openHistory());
+continueHistoryButton.addEventListener("click", () => void continueSelectedHistory());
+deleteConversationButton.addEventListener("click", () => void deleteSelectedConversation());
 stopRunButton.addEventListener("click", () => void stopRun());
 taskForm.addEventListener("submit", (event) => void startRun(event));
+taskInput.addEventListener("input", scheduleDraftPersistence);
+copyFilePathButton.addEventListener("click", () => void copyPreviewValue("path"));
+copyFileContentButton.addEventListener("click", () => void copyPreviewValue("content"));
+restoreFileChangeButton.addEventListener("click", () => void restoreCurrentFile());
+restoreAllChangesButton.addEventListener("click", () => void restoreAllChanges());
+attachmentsButton.addEventListener("click", () => void selectAttachments());
 skillsButton.addEventListener("click", openSkills);
 memoryButton.addEventListener("click", openMemory);
+contextPreviewButton.addEventListener("click", () => void openContextPreview());
+clearContinuationButton.addEventListener("click", () => void clearContinuation(true, true));
 refreshSkillsButton.addEventListener("click", () => void loadProjectContext(true));
+newSkillButton.addEventListener("click", openNewSkill);
+skillEditorForm.addEventListener("submit", (event) => void saveSkill(event));
+closeSkillEditorButton.addEventListener("click", closeSkillEditor);
+cancelSkillEditorButton.addEventListener("click", closeSkillEditor);
+skillEditorDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeSkillEditor();
+});
 memoryForm.addEventListener("submit", (event) => void saveMemory(event));
-memoryInput.addEventListener("input", renderMemoryCharacterCount);
+memoryInput.addEventListener("input", () => {
+  renderMemoryCharacterCount();
+  renderMemoryUseOption();
+  renderMemoryPreview();
+});
 closeMemoryButton.addEventListener("click", () => memoryDialog.close());
 cancelMemoryButton.addEventListener("click", () => memoryDialog.close());
+deleteMemoryButton.addEventListener("click", () => void deleteMemory());
+importMemoryButton.addEventListener("click", () => void importMemory());
+exportMemoryButton.addEventListener("click", () => void exportMemory());
 settingsForm.addEventListener("submit", (event) => void saveSettings(event));
+settingsProfileSelect.addEventListener("change", selectSettingsProfile);
+newModelProfileButton.addEventListener("click", newModelProfile);
+deleteModelProfileButton.addEventListener("click", () => void deleteModelProfile());
+testModelButton.addEventListener("click", () => void testModelConnection());
+modelPresetInput.addEventListener("change", selectModelPreset);
+modelNameInput.addEventListener("input", syncModelPreset);
 useModelScopePresetButton.addEventListener("click", useModelScopePreset);
 openModelScopeTokenButton.addEventListener("click", () => void api.openModelScopeTokenPage());
+exportRunReportButton.addEventListener("click", () => void exportSelectedRunReport());
 approveCommandButton.addEventListener("click", (event) => void answerApproval(event, true));
 rejectCommandButton.addEventListener("click", (event) => void answerApproval(event, false));
-approvalDialog.addEventListener("close", () => {
-  if (activeApproval && !approvalAnswered) {
-    void api.answerApproval(activeApproval.id, false);
-  }
-  activeApproval = null;
-  approvalAnswered = false;
+quickOpenInput.addEventListener("input", () => {
+  quickOpenSelectionIndex = 0;
+  renderQuickOpenResults();
 });
+quickOpenInput.addEventListener("keydown", handleQuickOpenKeydown);
+quickOpenForm.addEventListener("submit", handleQuickOpenSubmit);
+document.addEventListener("keydown", handleGlobalShortcut);
+window.addEventListener("beforeunload", persistDraftNow);
 
 setupColumnResizing();
 
@@ -148,6 +275,7 @@ api.onAgentEvent(handleAgentEvent);
 api.onApprovalRequested(showApproval);
 api.onChangesUpdated((nextChanges) => {
   changes = nextChanges;
+  restoreArmKey = null;
   renderChanges();
   void refreshProject(false);
   void loadRunHistory();
@@ -157,8 +285,16 @@ void initialize();
 
 async function initialize(): Promise<void> {
   try {
-    currentSettings = await api.getSettings();
-    renderModelStatus();
+    await loadModelProfiles();
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+  try {
+    const restored = await api.restoreProject();
+    if (restored) {
+      await activateProject(restored);
+      notify(taskInput.value ? "已恢复上次项目和未发送草稿。" : "已恢复上次项目。");
+    }
   } catch (error) {
     notify(errorMessage(error));
   }
@@ -166,25 +302,56 @@ async function initialize(): Promise<void> {
 
 async function selectProject(): Promise<void> {
   try {
+    persistDraftNow();
     const selected = await api.selectProject();
     if (!selected) {
       return;
     }
-    project = selected;
-    selectedFile = null;
-    changes = [];
-    selectedSkillIds.clear();
-    runHistory = [];
-    projectContext = { skills: [], memory: "", maxMemoryChars: 12_000, maxSelectedSkills: 8 };
-    treeInitialized = false;
-    expandedDirectories.clear();
-    renderProject();
-    renderChanges();
-    showProjectWelcome();
-    await Promise.all([loadProjectContext(), loadRunHistory()]);
+    await activateProject(selected);
   } catch (error) {
     notify(errorMessage(error));
   }
+}
+
+async function activateProject(selected: ProjectSnapshot): Promise<void> {
+  project = selected;
+  selectedFile = null;
+  changes = [];
+  activeDiffPath = null;
+  restoreArmKey = null;
+  selectedSkillIds.clear();
+  runHistory = [];
+  memoryEnabled = false;
+  memorySelectionInitialized = false;
+  conversationHydrated = false;
+  selectedHistoryId = null;
+  selectedHistoryDetail = null;
+  continuationSource = null;
+  activeConversationRunId = null;
+  editingSkillId = null;
+  skillDeleteConfirmId = null;
+  memoryDeleteArmed = false;
+  conversationDeleteArmed = false;
+  attachmentPaths = [];
+  taskInput.value = loadTaskDraft(window.localStorage, selected.rootPath);
+  renderTokenUsage(null);
+  renderContinuationContext();
+  renderAttachments();
+  projectContext = {
+    skills: [],
+    memory: "",
+    memoryUpdatedAt: null,
+    maxMemoryChars: 12_000,
+    maxSelectedSkills: 8,
+  };
+  treeInitialized = false;
+  expandedDirectories.clear();
+  clearTimeline(true);
+  renderProject();
+  renderChanges();
+  showProjectWelcome();
+  await Promise.all([loadProjectContext(), loadRunHistory()]);
+  await hydrateConversationFromHistory();
 }
 
 async function refreshProject(showMessage = true): Promise<void> {
@@ -206,6 +373,127 @@ async function refreshProject(showMessage = true): Promise<void> {
   }
 }
 
+function handleGlobalShortcut(event: KeyboardEvent): void {
+  if (
+    event.defaultPrevented ||
+    (!event.ctrlKey && !event.metaKey) ||
+    event.altKey ||
+    event.shiftKey ||
+    event.key.toLocaleLowerCase() !== "p"
+  ) {
+    return;
+  }
+  event.preventDefault();
+  openQuickOpen();
+}
+
+function openQuickOpen(): void {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  const anotherDialog = document.querySelector<HTMLDialogElement>("dialog[open]");
+  if (anotherDialog && anotherDialog !== quickOpenDialog) {
+    notify("请先关闭当前窗口，再快速打开文件。");
+    return;
+  }
+  quickOpenInput.value = "";
+  quickOpenSelectionIndex = 0;
+  renderQuickOpenResults();
+  if (!quickOpenDialog.open) {
+    quickOpenDialog.showModal();
+  }
+  quickOpenInput.focus();
+}
+
+function renderQuickOpenResults(): void {
+  quickOpenMatches = rankQuickOpen(project?.files ?? [], quickOpenInput.value);
+  quickOpenSelectionIndex = Math.min(
+    quickOpenSelectionIndex,
+    Math.max(0, quickOpenMatches.length - 1),
+  );
+  quickOpenCount.textContent = `${quickOpenMatches.length} 个匹配文件`;
+  quickOpenList.replaceChildren();
+  if (quickOpenMatches.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "quick-open-empty";
+    empty.textContent = "没有匹配的项目文件。";
+    quickOpenList.append(empty);
+    return;
+  }
+  quickOpenMatches.forEach((match, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `quick-open-result${index === quickOpenSelectionIndex ? " selected" : ""}`;
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(index === quickOpenSelectionIndex));
+    const name = document.createElement("strong");
+    name.textContent = match.fileName;
+    const pathValue = document.createElement("span");
+    pathValue.textContent = match.relativePath;
+    button.append(name, pathValue);
+    button.addEventListener("mousemove", () => {
+      if (quickOpenSelectionIndex !== index) {
+        quickOpenSelectionIndex = index;
+        updateQuickOpenSelection();
+      }
+    });
+    button.addEventListener("click", () => void selectQuickOpenMatch(index));
+    quickOpenList.append(button);
+  });
+}
+
+function handleQuickOpenKeydown(event: KeyboardEvent): void {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (quickOpenMatches.length === 0) {
+      return;
+    }
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    quickOpenSelectionIndex =
+      (quickOpenSelectionIndex + direction + quickOpenMatches.length) % quickOpenMatches.length;
+    updateQuickOpenSelection();
+    return;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void selectQuickOpenMatch(quickOpenSelectionIndex);
+  }
+}
+
+function handleQuickOpenSubmit(event: SubmitEvent): void {
+  const submitter = event.submitter as HTMLButtonElement | null;
+  if (submitter?.value === "cancel") {
+    return;
+  }
+  event.preventDefault();
+  void selectQuickOpenMatch(quickOpenSelectionIndex);
+}
+
+function updateQuickOpenSelection(): void {
+  quickOpenList.querySelectorAll<HTMLButtonElement>(".quick-open-result").forEach(
+    (button, index) => {
+      const selected = index === quickOpenSelectionIndex;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-selected", String(selected));
+      if (selected) {
+        button.scrollIntoView({ block: "nearest" });
+      }
+    },
+  );
+}
+
+async function selectQuickOpenMatch(index: number): Promise<void> {
+  const match = quickOpenMatches[index];
+  if (!match) {
+    return;
+  }
+  if (quickOpenDialog.open) {
+    quickOpenDialog.close("selected");
+  }
+  await openFile(match.relativePath);
+}
+
 function renderProject(): void {
   if (!project) {
     return;
@@ -224,14 +512,10 @@ function renderProject(): void {
     insertFile(root, file.relativePath);
   }
   fileTree.append(renderTree(root, 0));
-  if (project.limited) {
-    const note = document.createElement("p");
-    note.className = "empty-copy";
-    note.textContent = "文件较多，仅显示前 2,000 个。";
-    fileTree.append(note);
-  }
   treeInitialized = true;
   fileTree.scrollTop = previousScrollTop;
+  newConversationButton.disabled = runIsActive;
+  attachmentsButton.disabled = runIsActive;
 }
 
 function insertFile(root: TreeNode, relativePath: string): void {
@@ -342,16 +626,17 @@ async function openFile(relativePath: string): Promise<void> {
   try {
     const file = await api.readFile(relativePath);
     selectedFile = file.relativePath;
+    activeDiffPath = null;
+    restoreArmKey = null;
     previewTitle.textContent = file.relativePath;
     previewMeta.textContent = `${file.language} · ${formatBytes(file.size)} · 只读`;
     previewMode.textContent = "FILE";
-    const pre = document.createElement("pre");
-    pre.className = "code-view";
-    pre.textContent = file.content;
-    previewContent.replaceChildren(pre);
+    previewContent.replaceChildren(codePreview(file.content));
+    setPreviewCopyValues(file.relativePath, file.content);
     selectedContext.textContent = `上下文：${file.relativePath}`;
     updateFileSelection();
     renderChanges();
+    renderRestoreActions();
   } catch (error) {
     notify(errorMessage(error));
   }
@@ -365,6 +650,7 @@ function renderChanges(): void {
     empty.className = "empty-copy";
     empty.textContent = "Agent 修改的文件会集中显示。";
     changeList.append(empty);
+    renderRestoreActions();
     return;
   }
   for (const change of changes) {
@@ -375,10 +661,13 @@ function renderChanges(): void {
     button.addEventListener("click", () => showDiff(change));
     changeList.append(button);
   }
+  renderRestoreActions();
 }
 
 function showDiff(change: ChangedFileSnapshot): void {
   selectedFile = change.relativePath;
+  activeDiffPath = change.relativePath;
+  restoreArmKey = null;
   previewTitle.textContent = change.relativePath;
   previewMeta.textContent = change.originalContent === null ? "新文件 · 只读差异" : "修改前 / 修改后";
   previewMode.textContent = "DIFF";
@@ -389,8 +678,96 @@ function showDiff(change: ChangedFileSnapshot): void {
     diffColumn("修改后", change.currentContent),
   );
   previewContent.replaceChildren(wrapper);
+  setPreviewCopyValues(change.relativePath, change.currentContent);
   selectedContext.textContent = `上下文：${change.relativePath}`;
   updateFileSelection();
+  renderRestoreActions();
+}
+
+function renderRestoreActions(): void {
+  const activeChange = activeDiffPath
+    ? changes.find((change) => change.relativePath === activeDiffPath)
+    : undefined;
+  restoreFileChangeButton.hidden = !activeChange;
+  restoreFileChangeButton.disabled = runIsActive || !activeChange;
+  restoreFileChangeButton.textContent = restoreArmKey === activeDiffPath
+    ? "确认撤销此文件"
+    : "撤销此文件";
+  restoreAllChangesButton.hidden = changes.length === 0;
+  restoreAllChangesButton.disabled = runIsActive || changes.length === 0;
+  restoreAllChangesButton.textContent = restoreArmKey === "*"
+    ? `确认撤销 ${changes.length} 个文件`
+    : "全部撤销";
+}
+
+async function restoreCurrentFile(): Promise<void> {
+  const change = activeDiffPath
+    ? changes.find((item) => item.relativePath === activeDiffPath)
+    : undefined;
+  if (!change || runIsActive) {
+    return;
+  }
+  if (restoreArmKey !== change.relativePath) {
+    restoreArmKey = change.relativePath;
+    renderRestoreActions();
+    notify("再点一次确认撤销；若文件已被外部修改，将自动停止保护现有内容。");
+    return;
+  }
+  restoreFileChangeButton.disabled = true;
+  try {
+    const result = await api.restoreChanges({
+      files: [{ relativePath: change.relativePath, currentHash: change.currentHash }],
+    });
+    changes = result.changes;
+    activeDiffPath = null;
+    restoreArmKey = null;
+    await refreshProject(false);
+    if (change.originalContent === null) {
+      selectedFile = null;
+      showProjectWelcome();
+    } else {
+      await openFile(change.relativePath);
+    }
+    renderChanges();
+    notify(`已撤销 ${change.relativePath} 的本次变更。`);
+  } catch (error) {
+    restoreArmKey = null;
+    renderRestoreActions();
+    notify(errorMessage(error));
+  }
+}
+
+async function restoreAllChanges(): Promise<void> {
+  if (changes.length === 0 || runIsActive) {
+    return;
+  }
+  if (restoreArmKey !== "*") {
+    restoreArmKey = "*";
+    renderRestoreActions();
+    notify("再点一次确认全部撤销；检测到外部修改时不会覆盖。 ");
+    return;
+  }
+  restoreAllChangesButton.disabled = true;
+  try {
+    const result = await api.restoreChanges({
+      files: changes.map((change) => ({
+        relativePath: change.relativePath,
+        currentHash: change.currentHash,
+      })),
+    });
+    changes = result.changes;
+    activeDiffPath = null;
+    restoreArmKey = null;
+    selectedFile = null;
+    await refreshProject(false);
+    showProjectWelcome();
+    renderChanges();
+    notify(`已撤销 ${result.restoredFiles.length} 个文件的本次变更。`);
+  } catch (error) {
+    restoreArmKey = null;
+    renderRestoreActions();
+    notify(errorMessage(error));
+  }
 }
 
 function diffColumn(label: string, content: string): HTMLElement {
@@ -405,6 +782,8 @@ function diffColumn(label: string, content: string): HTMLElement {
 }
 
 function showProjectWelcome(): void {
+  activeDiffPath = null;
+  restoreArmKey = null;
   previewTitle.textContent = project ? project.name : "代码预览";
   previewMeta.textContent = project ? `${project.files.length} 个文件` : "只读";
   previewMode.textContent = "PROJECT";
@@ -430,34 +809,288 @@ function showProjectWelcome(): void {
   }
   welcome.append(mark, kicker, heading, copy, hints);
   previewContent.replaceChildren(welcome);
+  setPreviewCopyValues("", "");
   selectedContext.textContent = "未选择文件";
+  renderRestoreActions();
+}
+
+function codePreview(content: string): HTMLElement {
+  const frame = document.createElement("div");
+  frame.className = "code-frame";
+  const lineNumbers = document.createElement("pre");
+  lineNumbers.className = "code-line-numbers";
+  lineNumbers.setAttribute("aria-hidden", "true");
+  const lineCount = content.split("\n").length;
+  lineNumbers.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
+  const code = document.createElement("pre");
+  code.className = "code-view";
+  code.textContent = content;
+  frame.append(lineNumbers, code);
+  return frame;
+}
+
+function setPreviewCopyValues(relativePath: string, content: string): void {
+  previewCopyPath = relativePath;
+  previewCopyContent = content;
+  copyFilePathButton.disabled = !relativePath;
+  copyFileContentButton.disabled = !relativePath;
+}
+
+async function copyPreviewValue(kind: "path" | "content"): Promise<void> {
+  const value = kind === "path" ? previewCopyPath : previewCopyContent;
+  if (!value && kind === "path") {
+    return;
+  }
+  try {
+    await writeClipboard(value);
+    notify(kind === "path" ? "已复制项目内路径。" : "已复制文件内容。");
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+async function writeClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const fallback = document.createElement("textarea");
+  fallback.value = value;
+  fallback.style.position = "fixed";
+  fallback.style.opacity = "0";
+  document.body.append(fallback);
+  fallback.select();
+  const copied = document.execCommand("copy");
+  fallback.remove();
+  if (!copied) {
+    throw new Error("复制失败，请重试。");
+  }
+}
+
+async function loadModelProfiles(): Promise<void> {
+  modelProfiles = await api.getModelProfiles();
+  currentSettings = modelProfiles.profiles.find(
+    (profile) => profile.profileId === modelProfiles.activeProfileId,
+  ) ?? await api.getSettings();
+  renderModelProfileSwitch();
+  renderModelStatus();
+}
+
+function renderModelProfileSwitch(): void {
+  modelProfileSwitch.replaceChildren();
+  for (const profile of modelProfiles.profiles) {
+    const option = document.createElement("option");
+    option.value = profile.profileId;
+    option.textContent = `${profile.profileName} · ${profileCapabilityLabel(profile)}`;
+    option.title = `${profile.model}\n${profile.apiBaseUrl}`;
+    modelProfileSwitch.append(option);
+  }
+  modelProfileSwitch.value = modelProfiles.activeProfileId;
+  const active = modelProfiles.profiles.find(
+    (profile) => profile.profileId === modelProfiles.activeProfileId,
+  );
+  modelProfileSwitch.title = active
+    ? `${active.model}\n${active.apiBaseUrl}`
+    : "快速切换模型配置";
+  modelProfileSwitch.disabled = runIsActive || modelProfiles.profiles.length === 0;
+}
+
+function profileCapabilityLabel(profile: ModelProfileSummary): string {
+  if (!profile.hasApiKey) {
+    return "缺少 Key";
+  }
+  if (!profile.lastDiagnostic) {
+    return "未测试";
+  }
+  return profile.lastDiagnostic.ok ? "✓ Agent" : "! 需检查";
+}
+
+async function switchModelProfile(): Promise<void> {
+  if (runIsActive || !modelProfileSwitch.value) {
+    modelProfileSwitch.value = modelProfiles.activeProfileId;
+    return;
+  }
+  const nextId = modelProfileSwitch.value;
+  if (nextId === modelProfiles.activeProfileId) {
+    return;
+  }
+  modelProfileSwitch.disabled = true;
+  try {
+    currentSettings = await api.activateModelProfile(nextId);
+    await loadModelProfiles();
+    if (project) {
+      appendTimeline(
+        "模型已切换",
+        `${currentSettings.profileName}\n${currentSettings.model}\n从下一条任务开始生效。`,
+        "success",
+      );
+    }
+    notify(`已切换到 ${currentSettings.profileName}。`);
+  } catch (error) {
+    modelProfileSwitch.value = modelProfiles.activeProfileId;
+    notify(errorMessage(error));
+  } finally {
+    modelProfileSwitch.disabled = runIsActive;
+  }
 }
 
 async function openSettings(): Promise<void> {
   try {
-    currentSettings = await api.getSettings();
-    apiBaseUrlInput.value = currentSettings.apiBaseUrl;
-    modelNameInput.value = currentSettings.model;
-    apiKeyInput.value = "";
-    maxStepsInput.value = String(currentSettings.maxSteps);
-    commandTimeoutInput.value = String(Math.round(currentSettings.commandTimeoutMs / 1000));
-    apiKeyHelp.textContent = currentSettings.hasApiKey
-      ? `已有 Key（来源：${currentSettings.apiKeySource === "environment" ? "环境变量" : "系统加密存储"}）`
-      : "尚未保存 Key。保存时会使用系统安全存储加密。";
+    await loadModelProfiles();
+    editingModelProfileId = modelProfiles.activeProfileId;
+    modelProfileDeleteArmed = false;
+    renderSettingsProfileSelect();
+    const active = modelProfiles.profiles.find(
+      (profile) => profile.profileId === editingModelProfileId,
+    );
+    if (active) {
+      applyProfileToSettingsForm(active);
+    }
     settingsError.textContent = "";
+    modelDiagnostic.hidden = true;
+    modelDiagnostic.replaceChildren();
     settingsDialog.showModal();
   } catch (error) {
     notify(errorMessage(error));
   }
 }
 
+function renderSettingsProfileSelect(): void {
+  settingsProfileSelect.replaceChildren();
+  for (const profile of modelProfiles.profiles) {
+    const option = document.createElement("option");
+    option.value = profile.profileId;
+    option.textContent = `${profile.profileName} · ${profileCapabilityLabel(profile)}`;
+    settingsProfileSelect.append(option);
+  }
+  if (!editingModelProfileId) {
+    const draft = document.createElement("option");
+    draft.value = "__new__";
+    draft.textContent = "新配置（尚未保存）";
+    settingsProfileSelect.append(draft);
+    settingsProfileSelect.value = draft.value;
+  } else {
+    settingsProfileSelect.value = editingModelProfileId;
+  }
+  profileCount.textContent = `${modelProfiles.profiles.length} / ${modelProfiles.maxProfiles} 个配置；不同配置的 Key 独立加密保存。`;
+  newModelProfileButton.disabled = modelProfiles.profiles.length >= modelProfiles.maxProfiles;
+  deleteModelProfileButton.disabled = !editingModelProfileId || modelProfiles.profiles.length <= 1;
+  deleteModelProfileButton.textContent = modelProfileDeleteArmed ? "确认删除" : "删除配置";
+}
+
+function applyProfileToSettingsForm(profile: ModelProfileSummary): void {
+  profileNameInput.value = profile.profileName;
+  apiBaseUrlInput.value = profile.apiBaseUrl;
+  modelNameInput.value = profile.model;
+  syncModelPreset();
+  apiKeyInput.value = "";
+  maxStepsInput.value = String(profile.maxSteps);
+  commandTimeoutInput.value = String(Math.round(profile.commandTimeoutMs / 1000));
+  permissionModeInput.value = profile.permissionMode;
+  responseProfileInput.value = profile.responseProfile;
+  apiKeyHelp.textContent = profile.hasApiKey
+    ? `已有 Key（来源：${profile.apiKeySource === "environment" ? "环境变量" : "此配置的系统加密存储"}）`
+    : "此配置尚未保存 Key；不会继承其他模型配置的 Key。";
+}
+
+function selectSettingsProfile(): void {
+  const profile = modelProfiles.profiles.find(
+    (item) => item.profileId === settingsProfileSelect.value,
+  );
+  if (!profile) {
+    return;
+  }
+  editingModelProfileId = profile.profileId;
+  modelProfileDeleteArmed = false;
+  applyProfileToSettingsForm(profile);
+  renderSettingsProfileSelect();
+  modelDiagnostic.hidden = true;
+}
+
+function newModelProfile(): void {
+  if (modelProfiles.profiles.length >= modelProfiles.maxProfiles) {
+    notify(`最多保存 ${modelProfiles.maxProfiles} 个模型配置。`);
+    return;
+  }
+  const source = currentSettings;
+  editingModelProfileId = null;
+  modelProfileDeleteArmed = false;
+  profileNameInput.value = "新模型配置";
+  apiBaseUrlInput.value = source?.apiBaseUrl ?? "https://api-inference.modelscope.cn/v1";
+  modelNameInput.value = source?.model ?? "Qwen/Qwen3-Coder-30B-A3B-Instruct";
+  maxStepsInput.value = String(source?.maxSteps ?? 12);
+  commandTimeoutInput.value = String(Math.round((source?.commandTimeoutMs ?? 120_000) / 1000));
+  permissionModeInput.value = source?.permissionMode ?? "workspace";
+  responseProfileInput.value = source?.responseProfile ?? "balanced";
+  apiKeyInput.value = "";
+  apiKeyHelp.textContent = "新配置不会继承当前配置的 Key，请填写对应平台的 Key。";
+  syncModelPreset();
+  renderSettingsProfileSelect();
+  modelDiagnostic.hidden = true;
+  profileNameInput.focus();
+  profileNameInput.select();
+}
+
+async function deleteModelProfile(): Promise<void> {
+  if (!editingModelProfileId || modelProfiles.profiles.length <= 1 || runIsActive) {
+    return;
+  }
+  if (!modelProfileDeleteArmed) {
+    modelProfileDeleteArmed = true;
+    renderSettingsProfileSelect();
+    notify("再点一次确认删除；该配置保存的加密 Key 也会一起移除。 ");
+    return;
+  }
+  deleteModelProfileButton.disabled = true;
+  try {
+    modelProfiles = await api.deleteModelProfile(editingModelProfileId);
+    currentSettings = modelProfiles.profiles.find(
+      (profile) => profile.profileId === modelProfiles.activeProfileId,
+    ) ?? await api.getSettings();
+    editingModelProfileId = modelProfiles.activeProfileId;
+    modelProfileDeleteArmed = false;
+    renderModelProfileSwitch();
+    renderModelStatus();
+    renderSettingsProfileSelect();
+    const active = modelProfiles.profiles.find(
+      (profile) => profile.profileId === editingModelProfileId,
+    );
+    if (active) {
+      applyProfileToSettingsForm(active);
+    }
+    notify("模型配置已删除。 ");
+  } catch (error) {
+    modelProfileDeleteArmed = false;
+    settingsError.textContent = errorMessage(error);
+    renderSettingsProfileSelect();
+  }
+}
+
 function useModelScopePreset(): void {
   apiBaseUrlInput.value = "https://api-inference.modelscope.cn/v1";
   modelNameInput.value = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
+  syncModelPreset();
   apiKeyInput.value = "";
   apiKeyHelp.textContent =
     "请粘贴 ModelScope Token。切换服务不会把其他平台保存的 Key 发送给 ModelScope。";
+  if (!editingModelProfileId || profileNameInput.value === "新模型配置") {
+    profileNameInput.value = "ModelScope · Qwen3 Coder 30B";
+  }
   apiKeyInput.focus();
+}
+
+function selectModelPreset(): void {
+  if (modelPresetInput.value !== "custom") {
+    modelNameInput.value = modelPresetInput.value;
+  }
+  modelNameInput.focus();
+}
+
+function syncModelPreset(): void {
+  const hasPreset = Array.from(modelPresetInput.options).some(
+    (option) => option.value !== "custom" && option.value === modelNameInput.value.trim(),
+  );
+  modelPresetInput.value = hasPreset ? modelNameInput.value.trim() : "custom";
 }
 
 async function saveSettings(event: SubmitEvent): Promise<void> {
@@ -471,30 +1104,373 @@ async function saveSettings(event: SubmitEvent): Promise<void> {
   }
   try {
     settingsError.textContent = "";
-    currentSettings = await api.saveSettings({
-      apiBaseUrl: apiBaseUrlInput.value,
-      model: modelNameInput.value,
-      apiKey: apiKeyInput.value || undefined,
-      maxSteps: Number(maxStepsInput.value),
-      commandTimeoutMs: Number(commandTimeoutInput.value) * 1000,
-      maxOutputChars: currentSettings?.maxOutputChars ?? 20_000,
-    });
+    modelProfiles = await api.saveModelProfile(modelProfileInputValue());
+    currentSettings = modelProfiles.profiles.find(
+      (profile) => profile.profileId === modelProfiles.activeProfileId,
+    ) ?? await api.getSettings();
     settingsDialog.close();
+    renderModelProfileSwitch();
     renderModelStatus();
-    notify("模型设置已保存。");
+    notify(`模型配置“${currentSettings.profileName}”已保存并启用。`);
   } catch (error) {
     settingsError.textContent = errorMessage(error);
   }
+}
+
+function modelProfileInputValue(): ModelProfileInput {
+  return {
+    id: editingModelProfileId ?? undefined,
+    name: profileNameInput.value,
+    apiBaseUrl: apiBaseUrlInput.value,
+    model: modelNameInput.value,
+    apiKey: apiKeyInput.value || undefined,
+    maxSteps: Number(maxStepsInput.value),
+    commandTimeoutMs: Number(commandTimeoutInput.value) * 1000,
+    maxOutputChars: currentSettings?.maxOutputChars ?? 20_000,
+    permissionMode: permissionModeInput.value as PublicSettings["permissionMode"],
+    responseProfile: responseProfileInput.value as PublicSettings["responseProfile"],
+  };
+}
+
+async function testModelConnection(): Promise<void> {
+  if (!settingsForm.reportValidity()) {
+    return;
+  }
+  settingsError.textContent = "";
+  modelDiagnostic.hidden = false;
+  modelDiagnostic.textContent = "正在检查文本、流式响应、Token 用量和工具调用…";
+  testModelButton.disabled = true;
+  testModelButton.textContent = "测试中…";
+  try {
+    modelProfiles = await api.saveModelProfile(modelProfileInputValue());
+    editingModelProfileId = modelProfiles.activeProfileId;
+    currentSettings = modelProfiles.profiles.find(
+      (profile) => profile.profileId === modelProfiles.activeProfileId,
+    ) ?? await api.getSettings();
+    apiKeyInput.value = "";
+    renderModelProfileSwitch();
+    renderModelStatus();
+    const result = await api.testModelConnection();
+    renderModelDiagnostic(result);
+    await loadModelProfiles();
+    renderSettingsProfileSelect();
+    notify(result.ok ? "模型已通过 Agent 能力自检。" : "连接可用，但部分 Agent 能力未通过。 ");
+  } catch (error) {
+    modelDiagnostic.hidden = false;
+    modelDiagnostic.textContent = "";
+    const failure = document.createElement("p");
+    failure.className = "diagnostic-summary failed";
+    failure.textContent = errorMessage(error);
+    modelDiagnostic.append(failure);
+  } finally {
+    testModelButton.disabled = false;
+    testModelButton.textContent = "保存并测试";
+  }
+}
+
+function renderModelDiagnostic(result: Awaited<ReturnType<DesktopApi["testModelConnection"]>>): void {
+  modelDiagnostic.hidden = false;
+  modelDiagnostic.replaceChildren();
+  const summary = document.createElement("p");
+  summary.className = `diagnostic-summary ${result.ok ? "passed" : "failed"}`;
+  summary.textContent = `${result.model} · ${result.latencyMs.toLocaleString()} ms · ${result.ok ? "适合运行 Agent" : "需要检查"}`;
+  const list = document.createElement("div");
+  list.className = "diagnostic-checks";
+  for (const check of result.checks) {
+    const item = document.createElement("div");
+    item.className = `diagnostic-check ${check.status}`;
+    const mark = document.createElement("span");
+    mark.textContent = check.status === "passed" ? "✓" : check.status === "failed" ? "!" : "–";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = diagnosticLabel(check.id);
+    const detail = document.createElement("small");
+    detail.textContent = check.detail;
+    copy.append(title, detail);
+    item.append(mark, copy);
+    list.append(item);
+  }
+  modelDiagnostic.append(summary, list);
+}
+
+function diagnosticLabel(id: "connection" | "text" | "streaming" | "toolCalling" | "usage"): string {
+  return {
+    connection: "连接与认证",
+    text: "文本响应",
+    streaming: "流式输出",
+    toolCalling: "工具调用",
+    usage: "Token 用量",
+  }[id];
 }
 
 function renderModelStatus(): void {
   if (!currentSettings) {
     return;
   }
+  const profile = modelProfiles.profiles.find(
+    (item) => item.profileId === currentSettings?.profileId,
+  );
   modelStatus.classList.toggle("ready", currentSettings.hasApiKey);
-  modelStatus.lastChild!.textContent = currentSettings.hasApiKey
-    ? ` ${currentSettings.model}`
-    : " 未配置模型";
+  modelStatus.classList.toggle("verified", profile?.lastDiagnostic?.ok === true);
+  modelStatus.classList.toggle(
+    "warning",
+    Boolean(profile?.lastDiagnostic && !profile.lastDiagnostic.ok),
+  );
+  modelStatus.lastChild!.textContent = !currentSettings.hasApiKey
+    ? " 缺少 Key"
+    : profile?.lastDiagnostic?.ok
+      ? " Agent 已验证"
+      : profile?.lastDiagnostic
+        ? " 能力需检查"
+        : ` ${responseProfileLabel(currentSettings.responseProfile)} · 未测试`;
+}
+
+function responseProfileLabel(profile: PublicSettings["responseProfile"]): string {
+  return profile === "fast" ? "快速" : profile === "thorough" ? "深入" : "标准";
+}
+
+function renderTokenUsage(usage: TokenUsage | null): void {
+  tokenUsage.classList.toggle("active", Boolean(usage));
+  tokenUsage.textContent = usage
+    ? `${usage.estimated ? "≈" : ""}${formatTokenCount(usage.totalTokens)} Token`
+    : "Token —";
+  tokenUsage.title = usage
+    ? `${usage.estimated ? "本地估算" : "接口精确值"}：输入 ${usage.promptTokens.toLocaleString("zh-CN")}，输出 ${usage.completionTokens.toLocaleString("zh-CN")}，合计 ${usage.totalTokens.toLocaleString("zh-CN")}`
+    : "本次任务的模型 Token 用量";
+}
+
+function lastTokenUsage(events: readonly AgentEvent[]): TokenUsage | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === "model_usage") {
+      if (
+        event.promptTokens === 0 &&
+        event.completionTokens === 0 &&
+        event.totalTokens === 0
+      ) {
+        continue;
+      }
+      return {
+        promptTokens: event.promptTokens,
+        completionTokens: event.completionTokens,
+        totalTokens: event.totalTokens,
+        estimated: event.estimated,
+      };
+    }
+  }
+  return null;
+}
+
+function tokenUsageForHistory(detail: RunHistoryDetail): TokenUsage | null {
+  const reported = lastTokenUsage(detail.events);
+  if (reported) {
+    return reported;
+  }
+  if (detail.messages.length === 0) {
+    return null;
+  }
+  const promptText = detail.messages
+    .filter((message) => message.role !== "assistant")
+    .map((message) => message.content)
+    .join("\n");
+  const completionText = detail.messages
+    .filter((message) => message.role === "assistant")
+    .map((message) => message.content ?? "")
+    .join("\n");
+  const promptTokens = estimateVisibleTokens(promptText);
+  const completionTokens = estimateVisibleTokens(completionText);
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    estimated: true,
+  };
+}
+
+function estimateVisibleTokens(text: string): number {
+  let weightedCharacters = 0;
+  for (const character of text) {
+    if (/\s/u.test(character)) {
+      continue;
+    }
+    weightedCharacters += /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(character)
+      ? 1
+      : 0.25;
+  }
+  return Math.max(1, Math.ceil(weightedCharacters));
+}
+
+function formatTokenCount(value: number): string {
+  return value >= 1_000
+    ? `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`
+    : value.toLocaleString("zh-CN");
+}
+
+function newConversation(): void {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  if (runIsActive) {
+    notify("请先停止或等待当前任务结束。");
+    return;
+  }
+  activeConversationRunId = null;
+  continuationSource = null;
+  attachmentPaths = [];
+  taskInput.value = "";
+  clearCurrentDraft();
+  renderContinuationContext();
+  renderAttachments();
+  clearTimeline(true);
+  renderTokenUsage(null);
+  taskInput.focus();
+  notify("已新建空白会话；原记录仍保留在历史中。");
+}
+
+async function selectAttachments(): Promise<void> {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  try {
+    const selected = await api.selectAttachments();
+    attachmentPaths = Array.from(
+      new Set([...attachmentPaths, ...selected.map((file) => file.relativePath)]),
+    ).slice(0, MAX_ATTACHMENT_FILES);
+    renderAttachments();
+  } catch (error) {
+    notify(errorMessage(error));
+  }
+}
+
+function renderAttachments(): void {
+  attachmentsBadge.textContent = String(attachmentPaths.length);
+  attachmentsButton.classList.toggle("active", attachmentPaths.length > 0);
+  attachmentList.hidden = attachmentPaths.length === 0;
+  attachmentList.replaceChildren();
+  for (const relativePath of attachmentPaths) {
+    const chip = document.createElement("span");
+    chip.className = "attachment-chip";
+    chip.title = relativePath;
+    const label = document.createElement("span");
+    label.textContent = relativePath.split("/").pop() ?? relativePath;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `移除附件 ${relativePath}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      attachmentPaths = attachmentPaths.filter((pathValue) => pathValue !== relativePath);
+      renderAttachments();
+    });
+    chip.append(label, remove);
+    attachmentList.append(chip);
+  }
+}
+
+function currentRunRequest(): RunRequest {
+  return {
+    task: taskInput.value.trim(),
+    selectedFile: selectedFile ?? undefined,
+    attachmentPaths,
+    skillIds: Array.from(selectedSkillIds),
+    useMemory: memoryEnabled && Boolean(projectContext.memory.trim()),
+    continueFromRunId: activeConversationRunId ?? undefined,
+  };
+}
+
+async function openContextPreview(): Promise<void> {
+  if (!project) {
+    notify("请先打开一个项目。");
+    return;
+  }
+  if (!taskInput.value.trim()) {
+    notify("请先写下任务，再查看发送清单。");
+    taskInput.focus();
+    return;
+  }
+  contextPreviewContent.replaceChildren(historyLoading("正在整理本次上下文…"));
+  contextPreviewDialog.showModal();
+  try {
+    const preview = await api.previewRunContext(currentRunRequest());
+    if (!contextPreviewDialog.open) {
+      return;
+    }
+    contextPreviewContent.replaceChildren();
+    const hero = document.createElement("div");
+    hero.className = "context-preview-hero";
+    const token = document.createElement("strong");
+    token.textContent = `≈ ${formatTokenCount(preview.estimatedInputTokens)} Token`;
+    const model = document.createElement("span");
+    model.textContent = `${preview.profileName} · ${preview.model} · ${preview.permissionMode === "readOnly" ? "只读" : "工作区读写"} · ${responseProfileLabel(preview.responseProfile)}`;
+    hero.append(token, model);
+
+    const metrics = document.createElement("div");
+    metrics.className = "context-preview-metrics";
+    metrics.append(
+      previewMetric("历史消息", String(preview.conversationMessageCount)),
+      previewMetric("Skills", String(preview.skills.length)),
+      previewMetric("附件", String(preview.attachments.length)),
+      previewMetric("可用工具", String(preview.toolCount)),
+    );
+    contextPreviewContent.append(hero, metrics);
+    contextPreviewContent.append(
+      previewGroup(
+        "当前文件",
+        preview.selectedFile ? [preview.selectedFile] : ["未选择；Agent 仍可按需读取项目文件。"],
+      ),
+      previewGroup(
+        `Memory · ${preview.memoryChars.toLocaleString()} 字符`,
+        preview.memoryChars > 0
+          ? [preview.memoryPreview || "已启用", preview.memoryUpdatedAt ? `更新于 ${formatHistoryDate(preview.memoryUpdatedAt)}` : "更新时间未知"]
+          : ["本次不注入 Memory。"],
+      ),
+      previewGroup(
+        "Skills",
+        preview.skills.length > 0
+          ? preview.skills.map((skill) => `${skill.name} · ${skill.contentChars.toLocaleString()} 字符 · ${skill.relativePath}`)
+          : ["本次未选择 Skill。"],
+      ),
+      previewGroup(
+        "附件",
+        preview.attachments.length > 0
+          ? preview.attachments.map((file) => `${file.relativePath} · ${file.contentChars.toLocaleString()} 字符`)
+          : ["本次没有附件。"],
+      ),
+    );
+    if (preview.warnings.length > 0) {
+      const warnings = previewGroup("注意", preview.warnings);
+      warnings.classList.add("warning");
+      contextPreviewContent.append(warnings);
+    }
+  } catch (error) {
+    contextPreviewContent.replaceChildren(historyLoading(errorMessage(error)));
+  }
+}
+
+function previewMetric(label: string, value: string): HTMLElement {
+  const item = document.createElement("div");
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const span = document.createElement("span");
+  span.textContent = label;
+  item.append(strong, span);
+  return item;
+}
+
+function previewGroup(titleText: string, rows: string[]): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "context-preview-group";
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const list = document.createElement("ul");
+  for (const row of rows) {
+    const item = document.createElement("li");
+    item.textContent = row;
+    list.append(item);
+  }
+  section.append(title, list);
+  return section;
 }
 
 async function startRun(event: SubmitEvent): Promise<void> {
@@ -510,22 +1486,96 @@ async function startRun(event: SubmitEvent): Promise<void> {
     return;
   }
   try {
-    const result = await api.startRun({
-      task,
-      selectedFile: selectedFile ?? undefined,
-      skillIds: Array.from(selectedSkillIds),
-    });
+    const result = await api.startRun({ ...currentRunRequest(), task });
     if (!result.started) {
       notify(result.message ?? "任务未能启动。");
       return;
     }
     setRunning(true);
+    activeConversationRunId = result.runId ?? activeConversationRunId;
     taskInput.value = "";
-    clearTimeline();
+    clearCurrentDraft();
+    attachmentPaths = [];
+    renderAttachments();
+    void clearContinuation(false);
     void loadRunHistory();
   } catch (error) {
     notify(errorMessage(error));
   }
+}
+
+function scheduleDraftPersistence(): void {
+  if (draftSaveTimer !== undefined) {
+    window.clearTimeout(draftSaveTimer);
+  }
+  draftSaveTimer = window.setTimeout(() => {
+    draftSaveTimer = undefined;
+    persistDraftNow();
+  }, 250);
+}
+
+function persistDraftNow(): void {
+  if (draftSaveTimer !== undefined) {
+    window.clearTimeout(draftSaveTimer);
+    draftSaveTimer = undefined;
+  }
+  if (project) {
+    saveTaskDraft(window.localStorage, project.rootPath, taskInput.value);
+  }
+}
+
+function clearCurrentDraft(): void {
+  if (draftSaveTimer !== undefined) {
+    window.clearTimeout(draftSaveTimer);
+    draftSaveTimer = undefined;
+  }
+  if (project) {
+    clearTaskDraft(window.localStorage, project.rootPath);
+  }
+}
+
+async function continueSelectedHistory(): Promise<void> {
+  if (!selectedHistoryDetail) {
+    notify("请先在左侧选择一条历史记录。");
+    return;
+  }
+  if (runIsActive || selectedHistoryDetail.status === "running") {
+    notify("请等待当前任务结束后再继续这段对话。");
+    return;
+  }
+  continuationSource = selectedHistoryDetail;
+  activeConversationRunId = selectedHistoryDetail.id;
+  renderContinuationContext();
+  historyDialog.close("continue");
+  await showHistoryConversation(selectedHistoryDetail);
+  taskInput.focus();
+  notify("已切换并接续所选历史对话，请输入下一条消息。");
+}
+
+async function clearContinuation(
+  focusInput: boolean,
+  restoreRecentConversation = false,
+): Promise<void> {
+  continuationSource = null;
+  renderContinuationContext();
+  if (restoreRecentConversation) {
+    await hydrateConversationFromHistory(true);
+  }
+  if (focusInput) {
+    taskInput.focus();
+  }
+}
+
+function renderContinuationContext(): void {
+  const source = continuationSource;
+  continuationContext.hidden = !source;
+  continuationTitle.textContent = source?.task ?? "";
+  continuationContext.title = source
+    ? `将把 ${formatHistoryDate(source.createdAt)} 的对话作为模型上下文`
+    : "";
+  taskInput.placeholder = source
+    ? "输入下一条消息，Agent 会结合所选历史对话继续处理。"
+    : defaultTaskPlaceholder;
 }
 
 async function stopRun(): Promise<void> {
@@ -543,17 +1593,26 @@ function handleAgentEvent(event: AgentEvent): void {
   switch (event.type) {
     case "run_started":
       lastAssistantMessage = "";
+      resetStreamingTimeline();
+      renderTokenUsage(null);
       setRunning(true);
-      appendTimeline("开始任务", event.task, "active");
+      appendConversationMessage("user", event.task, "你", undefined, true);
       break;
     case "model_started":
-      appendTimeline(`第 ${event.step} 步`, "模型正在决定下一项操作…", "active");
+      beginStreamingTimeline(event.step);
+      break;
+    case "assistant_delta":
+      appendStreamingText(event.step, event.text);
+      break;
+    case "model_usage":
+      renderTokenUsage(event);
       break;
     case "assistant_message":
       lastAssistantMessage = event.text.trim();
-      appendTimeline("Agent", event.text, "success", true);
+      finishStreamingMessage(event.text);
       break;
     case "tool_started":
+      finishStreamingToolDecision(event.name);
       appendTimeline(
         toolLabel(event.name),
         summarizeArguments(event.name, event.arguments),
@@ -578,14 +1637,156 @@ function handleAgentEvent(event: AgentEvent): void {
       setRunning(false);
       break;
     case "run_cancelled":
+      finishInterruptedStream("模型响应已停止");
       appendTimeline("任务已停止", `共执行 ${event.steps} 步`, "error");
       setRunning(false);
       break;
     case "run_failed":
-      appendTimeline("任务失败", event.message, "error");
-      setRunning(false, true);
+      finishInterruptedStream("模型响应未完成");
+      if (event.reason === "max_steps") {
+        const item = appendTimeline("已达到步骤上限", event.message, "active");
+        appendContinueRunAction(item);
+        setRunning(false);
+        setRunStatus("可继续", "idle");
+      } else {
+        appendTimeline("任务失败", event.message, "error");
+        setRunning(false, true);
+      }
       break;
   }
+}
+
+function appendContinueRunAction(item: HTMLElement): void {
+  const body = item.querySelector<HTMLElement>(".timeline-body");
+  if (!body) {
+    return;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "timeline-recovery-button";
+  button.textContent = "继续此任务";
+  button.addEventListener("click", () => {
+    taskInput.value = "继续完成刚才的任务。请结合已有上下文，先确认剩余工作，再从未完成处继续。";
+    scheduleDraftPersistence();
+    taskInput.focus();
+    taskInput.setSelectionRange(taskInput.value.length, taskInput.value.length);
+    notify("已准备继续指令，确认后发送即可。");
+  });
+  body.append(button);
+}
+
+function beginStreamingTimeline(step: number): void {
+  finishInterruptedStream("本轮响应已结束");
+  streamingStep = step;
+  streamingAssistantText = "";
+  streamingTimelineItem = appendTimeline(
+    `第 ${step} 步`,
+    "模型正在生成响应…",
+    "active",
+  );
+}
+
+function appendStreamingText(step: number, text: string): void {
+  if (!text) {
+    return;
+  }
+  if (!streamingTimelineItem || streamingStep !== step) {
+    beginStreamingTimeline(step);
+  }
+  streamingAssistantText += text;
+  if (streamingAnimationFrame === undefined) {
+    streamingAnimationFrame = window.requestAnimationFrame(() => {
+      streamingAnimationFrame = undefined;
+      renderStreamingText();
+    });
+  }
+}
+
+function renderStreamingText(): void {
+  if (!streamingTimelineItem || !streamingAssistantText) {
+    return;
+  }
+  updateConversationItem(
+    streamingTimelineItem,
+    "assistant",
+    streamingAssistantText,
+    "LocalForge",
+    `第 ${streamingStep} 步 · 正在生成`,
+    true,
+  );
+}
+
+function finishStreamingMessage(text: string): void {
+  cancelStreamingFrame();
+  if (streamingTimelineItem) {
+    updateConversationItem(streamingTimelineItem, "assistant", text, "LocalForge");
+  } else {
+    appendConversationMessage("assistant", text, "LocalForge");
+  }
+  resetStreamingTimeline();
+}
+
+function finishStreamingToolDecision(toolName: string): void {
+  if (!streamingTimelineItem) {
+    return;
+  }
+  cancelStreamingFrame();
+  if (streamingAssistantText) {
+    updateConversationItem(
+      streamingTimelineItem,
+      "assistant",
+      streamingAssistantText,
+      "LocalForge",
+    );
+  } else {
+    updateTimelineItem(
+      streamingTimelineItem,
+      `第 ${streamingStep} 步`,
+      `模型已请求${toolLabel(toolName)}。`,
+      "success",
+    );
+  }
+  resetStreamingTimeline();
+}
+
+function finishInterruptedStream(label: string): void {
+  if (!streamingTimelineItem) {
+    return;
+  }
+  cancelStreamingFrame();
+  if (streamingAssistantText) {
+    updateConversationItem(
+      streamingTimelineItem,
+      "assistant",
+      streamingAssistantText,
+      "LocalForge",
+      label,
+      false,
+      true,
+    );
+  } else {
+    updateTimelineItem(
+      streamingTimelineItem,
+      `第 ${streamingStep} 步`,
+      label,
+      "error",
+    );
+  }
+  resetStreamingTimeline();
+}
+
+function cancelStreamingFrame(): void {
+  if (streamingAnimationFrame !== undefined) {
+    window.cancelAnimationFrame(streamingAnimationFrame);
+    streamingAnimationFrame = undefined;
+  }
+}
+
+function resetStreamingTimeline(): void {
+  cancelStreamingFrame();
+  streamingAssistantText = "";
+  streamingStep = 0;
+  streamingTimelineItem = null;
 }
 
 function handleToolOutput(toolName: string, raw: string): void {
@@ -611,35 +1812,137 @@ function appendTimeline(
   detail: string,
   state: "active" | "success" | "error",
   rich = false,
-): void {
+): HTMLElement {
+  const shouldStick = isTimelineNearBottom();
   document.getElementById("timeline-empty")?.remove();
   const item = document.createElement("article");
-  item.className = `timeline-item ${state}`;
   const dot = document.createElement("span");
   dot.className = "timeline-dot";
-  dot.textContent = state === "success" ? "✓" : state === "error" ? "!" : "·";
   const body = document.createElement("div");
   body.className = "timeline-body";
+  item.append(dot, body);
+  updateTimelineItem(item, title, detail, state, rich);
+  timeline.append(item);
+  trimTimeline();
+  scrollTimelineIfNeeded(shouldStick);
+  return item;
+}
+
+function updateTimelineItem(
+  item: HTMLElement,
+  title: string,
+  detail: string,
+  state: "active" | "success" | "error",
+  rich = false,
+  streaming = false,
+): void {
+  const shouldStick = item.isConnected && isTimelineNearBottom();
+  item.className = `timeline-item ${state}${streaming ? " streaming" : ""}`;
+  const dot = item.querySelector<HTMLElement>(".timeline-dot");
+  const body = item.querySelector<HTMLElement>(".timeline-body");
+  if (!dot || !body) {
+    return;
+  }
+  dot.textContent = state === "success" ? "✓" : state === "error" ? "!" : "·";
   const heading = document.createElement("strong");
   heading.textContent = title;
   if (rich) {
-    body.append(heading, renderRichText(detail));
+    body.replaceChildren(heading, renderRichText(detail));
   } else {
     const copy = document.createElement(detail.includes("\n") ? "pre" : "p");
+    if (streaming) {
+      copy.className = "streaming-copy";
+    }
     copy.textContent = detail;
-    body.append(heading, copy);
+    body.replaceChildren(heading, copy);
   }
-  item.append(dot, body);
-  timeline.append(item);
-  while (timeline.childElementCount > 160) {
-    timeline.firstElementChild?.remove();
-  }
-  timeline.scrollTop = timeline.scrollHeight;
+  scrollTimelineIfNeeded(shouldStick);
 }
 
-function clearTimeline(): void {
+function appendConversationMessage(
+  role: "user" | "assistant",
+  text: string,
+  title: string,
+  meta?: string,
+  forceScroll = false,
+): HTMLElement {
+  const shouldStick = isTimelineNearBottom();
+  document.getElementById("timeline-empty")?.remove();
+  const item = document.createElement("article");
+  updateConversationItem(item, role, text, title, meta);
+  timeline.append(item);
+  trimTimeline();
+  scrollTimelineIfNeeded(shouldStick || forceScroll);
+  return item;
+}
+
+function updateConversationItem(
+  item: HTMLElement,
+  role: "user" | "assistant",
+  text: string,
+  title: string,
+  meta?: string,
+  streaming = false,
+  interrupted = false,
+): void {
+  const shouldStick = item.isConnected && isTimelineNearBottom();
+  item.className = `chat-message ${role}${streaming ? " streaming" : ""}${interrupted ? " interrupted" : ""}`;
+  const header = document.createElement("header");
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  header.append(heading);
+  if (meta) {
+    const detail = document.createElement("small");
+    detail.textContent = meta;
+    header.append(detail);
+  }
+  const content = document.createElement("div");
+  content.className = "chat-message-content";
+  if (role === "assistant" && !streaming && !interrupted) {
+    content.append(renderRichText(text));
+  } else {
+    const copy = document.createElement(text.includes("\n") ? "pre" : "p");
+    if (streaming) {
+      copy.className = "streaming-copy";
+    }
+    copy.textContent = text;
+    content.append(copy);
+  }
+  item.replaceChildren(header, content);
+  scrollTimelineIfNeeded(shouldStick);
+}
+
+function isTimelineNearBottom(): boolean {
+  return timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 90;
+}
+
+function scrollTimelineIfNeeded(shouldScroll: boolean): void {
+  if (shouldScroll) {
+    timeline.scrollTop = timeline.scrollHeight;
+  }
+}
+
+function trimTimeline(): void {
+  while (timeline.childElementCount > MAX_TIMELINE_ITEMS) {
+    timeline.firstElementChild?.remove();
+  }
+}
+
+function clearTimeline(showEmpty = false): void {
   lastAssistantMessage = "";
+  resetStreamingTimeline();
   timeline.replaceChildren();
+  if (showEmpty) {
+    const empty = document.createElement("div");
+    empty.id = "timeline-empty";
+    empty.className = "timeline-empty";
+    const title = document.createElement("strong");
+    title.textContent = "在这里开始连续对话";
+    const copy = document.createElement("p");
+    copy.textContent = "你的问题、Agent 回复、工具调用和运行结果都会按顺序保留。";
+    empty.append(title, copy);
+    timeline.append(empty);
+  }
 }
 
 function renderRichText(value: string): HTMLElement {
@@ -709,12 +2012,24 @@ function appendOutput(text: string): void {
 }
 
 function setRunning(isRunning: boolean, failed = false): void {
+  runIsActive = isRunning;
   stopRunButton.disabled = !isRunning;
   startRunButton.disabled = isRunning;
   openProjectButton.disabled = isRunning;
+  settingsButton.disabled = isRunning;
+  modelProfileSwitch.disabled = isRunning || modelProfiles.profiles.length === 0;
   skillsButton.disabled = isRunning || !project;
   memoryButton.disabled = isRunning || !project;
+  attachmentsButton.disabled = isRunning || !project;
+  contextPreviewButton.disabled = isRunning || !project;
+  newConversationButton.disabled = isRunning || !project;
   historyButton.disabled = !project;
+  if (!isRunning) {
+    activeApproval = null;
+    approvalPanel.hidden = true;
+  }
+  renderContinueHistoryButton();
+  renderRestoreActions();
   setRunStatus(isRunning ? "运行中" : failed ? "出错" : "待命", isRunning ? "running" : failed ? "error" : "idle");
 }
 
@@ -726,25 +2041,24 @@ function setRunStatus(label: string, state: "running" | "error" | "idle"): void 
 
 function showApproval(request: CommandApprovalRequest): void {
   activeApproval = request;
-  approvalAnswered = false;
   approvalReason.textContent = request.reason;
   approvalCommand.textContent = request.command;
   approvalCwd.textContent = `运行目录：${displayLocalPath(request.cwd)}`;
   appendTimeline("等待命令批准", request.command, "active");
-  approvalDialog.showModal();
+  approvalPanel.hidden = false;
+  approvalPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 async function answerApproval(event: MouseEvent, approved: boolean): Promise<void> {
   event.preventDefault();
   if (!activeApproval) {
-    approvalDialog.close();
+    approvalPanel.hidden = true;
     return;
   }
-  approvalAnswered = true;
   const request = activeApproval;
   activeApproval = null;
+  approvalPanel.hidden = true;
   await api.answerApproval(request.id, approved);
-  approvalDialog.close();
   appendTimeline(approved ? "命令已允许" : "命令已拒绝", request.command, approved ? "success" : "error");
 }
 
@@ -856,13 +2170,112 @@ async function loadRunHistory(showMessage = false): Promise<void> {
     runHistory = await api.listRunHistory();
     renderHistoryCount();
     if (historyDialog.open) {
-      renderHistoryList();
+      renderHistoryList(selectedHistoryId ?? undefined);
     }
     if (showMessage) {
       notify(`已读取 ${runHistory.length} 条任务历史。`);
     }
   } catch (error) {
     notify(errorMessage(error));
+  }
+}
+
+async function hydrateConversationFromHistory(force = false): Promise<void> {
+  if (!project || (conversationHydrated && !force)) {
+    return;
+  }
+  conversationHydrated = true;
+  const rootPath = project.rootPath;
+  const latestRun = runHistory.find((run) => run.status !== "running");
+  if (!latestRun) {
+    activeConversationRunId = null;
+    clearTimeline(true);
+    return;
+  }
+  try {
+    const detail = await api.getRunHistory(latestRun.id);
+    if (!project || project.rootPath !== rootPath) {
+      return;
+    }
+    activeConversationRunId = detail.id;
+    continuationSource = null;
+    renderContinuationContext();
+    await showHistoryConversation(detail);
+  } catch (error) {
+    conversationHydrated = false;
+    notify(`会话记录读取失败：${errorMessage(error)}`);
+  }
+}
+
+async function showHistoryConversation(source: RunHistoryDetail): Promise<void> {
+  if (!project) {
+    return;
+  }
+  const rootPath = project.rootPath;
+  const sourceId = source.id;
+  const chain: RunHistoryDetail[] = [source];
+  const seen = new Set<string>([source.id]);
+  let parentId = source.continuedFromRunId;
+
+  clearTimeline();
+  appendTimeline("正在切换历史对话", source.task, "active");
+  while (parentId && chain.length < MAX_CONVERSATION_HISTORY_RUNS && !seen.has(parentId)) {
+    seen.add(parentId);
+    try {
+      const parent = await api.getRunHistory(parentId);
+      chain.unshift(parent);
+      parentId = parent.continuedFromRunId;
+    } catch {
+      break;
+    }
+  }
+  if (
+    !project ||
+    project.rootPath !== rootPath ||
+    activeConversationRunId !== sourceId
+  ) {
+    return;
+  }
+  clearTimeline();
+  for (const detail of chain) {
+    appendHistoryRunToTimeline(detail);
+  }
+  renderTokenUsage(tokenUsageForHistory(source));
+  timeline.scrollTop = timeline.scrollHeight;
+}
+
+function appendHistoryRunToTimeline(detail: RunHistoryDetail): void {
+  const context = [
+    formatHistoryDate(detail.createdAt),
+    detail.memoryUsed ? "Memory" : "",
+    detail.skillIds.length > 0 ? `${detail.skillIds.length} 个 Skill` : "",
+    detail.attachmentPaths.length > 0 ? `${detail.attachmentPaths.length} 个附件` : "",
+    detail.continuedFromRunId ? "接续" : "",
+  ].filter(Boolean).join(" · ");
+  appendConversationMessage("user", detail.task, "你", context);
+
+  const assistantMessages = detail.messages
+    .filter(
+      (message): message is Extract<(typeof detail.messages)[number], { role: "assistant" }> =>
+        message.role === "assistant" && Boolean(message.content?.trim()),
+    )
+    .map((message) => message.content?.trim() ?? "")
+    .filter((text, index, values) => text && text !== values[index - 1]);
+  for (const message of assistantMessages) {
+    appendConversationMessage("assistant", message, "LocalForge");
+  }
+
+  if (detail.status === "completed") {
+    const summary = detail.summary.trim();
+    if (summary && assistantMessages.at(-1) !== summary) {
+      appendConversationMessage("assistant", summary, "LocalForge");
+    }
+  } else {
+    appendTimeline(
+      historyStatusLabel(detail.status),
+      detail.summary,
+      detail.status === "cancelled" ? "active" : "error",
+    );
   }
 }
 
@@ -877,6 +2290,10 @@ async function openHistory(): Promise<void> {
     return;
   }
   await loadRunHistory();
+  selectedHistoryId = null;
+  selectedHistoryDetail = null;
+  conversationDeleteArmed = false;
+  renderContinueHistoryButton();
   renderHistoryList();
   historyDialog.showModal();
   const first = runHistory[0];
@@ -913,20 +2330,39 @@ function renderHistoryList(selectedId?: string): void {
     const task = document.createElement("strong");
     task.textContent = run.task;
     const meta = document.createElement("small");
-    meta.textContent = `${run.steps} 步 · ${run.changedFiles.length} 个改动文件`;
+    meta.textContent = `${run.steps} 步 · ${run.changedFiles.length} 个改动文件${run.attachmentPaths.length > 0 ? ` · ${run.attachmentPaths.length} 附件` : ""}${run.continuedFromRunId ? " · 接续" : ""}`;
     button.append(row, task, meta);
     button.addEventListener("click", () => void showHistoryDetail(run.id));
+    button.addEventListener("dblclick", () => {
+      if (selectedHistoryDetail?.id === run.id) {
+        void continueSelectedHistory();
+      }
+    });
     historyList.append(button);
   }
 }
 
 async function showHistoryDetail(id: string): Promise<void> {
+  if (selectedHistoryId !== id) {
+    conversationDeleteArmed = false;
+  }
+  selectedHistoryId = id;
+  selectedHistoryDetail = null;
+  renderContinueHistoryButton();
   renderHistoryList(id);
   historyDetail.replaceChildren(historyLoading("正在读取任务详情…"));
   try {
     const detail = await api.getRunHistory(id);
+    if (selectedHistoryId !== id) {
+      return;
+    }
+    selectedHistoryDetail = detail;
+    renderContinueHistoryButton();
     renderHistoryDetail(detail);
   } catch (error) {
+    if (selectedHistoryId !== id) {
+      return;
+    }
     historyDetail.replaceChildren(historyLoading(errorMessage(error)));
   }
 }
@@ -958,11 +2394,35 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
   if (detail.selectedFile) {
     context.append(historyChip(`文件 · ${detail.selectedFile}`));
   }
+  if (detail.model) {
+    context.append(historyChip(`模型 · ${detail.modelProfileName ?? detail.model}`));
+  }
+  if (detail.permissionMode) {
+    context.append(historyChip(
+      detail.permissionMode === "readOnly" ? "只读权限" : "工作区读写",
+    ));
+  }
+  if (detail.responseProfile) {
+    context.append(historyChip(`响应 · ${responseProfileLabel(detail.responseProfile)}`));
+  }
   if (detail.skillIds.length > 0) {
     context.append(historyChip(`${detail.skillIds.length} 个 Skill`));
   }
+  if (detail.memoryUsed) {
+    context.append(historyChip("已使用 Memory"));
+  }
+  if (detail.attachmentPaths.length > 0) {
+    context.append(historyChip(`${detail.attachmentPaths.length} 个附件`));
+  }
+  if (detail.continuedFromRunId) {
+    context.append(historyChip("接续历史对话"));
+  }
   if (detail.changedFiles.length > 0) {
     context.append(historyChip(`${detail.changedFiles.length} 个改动文件`));
+  }
+  const usage = tokenUsageForHistory(detail);
+  if (usage) {
+    context.append(historyChip(`${usage.estimated ? "约 " : ""}${formatTokenCount(usage.totalTokens)} Token`));
   }
 
   const events = document.createElement("section");
@@ -1014,7 +2474,95 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
 }
 
 function renderEmptyHistoryDetail(): void {
+  selectedHistoryId = null;
+  selectedHistoryDetail = null;
+  conversationDeleteArmed = false;
+  renderContinueHistoryButton();
   historyDetail.replaceChildren(historyLoading("运行第一个 Agent 任务后，这里会显示完整记录。"));
+}
+
+function renderContinueHistoryButton(): void {
+  const detail = selectedHistoryDetail;
+  continueHistoryButton.disabled =
+    runIsActive || !detail || detail.status === "running";
+  continueHistoryButton.textContent = runIsActive
+    ? "当前任务运行中"
+    : !detail
+      ? "选择一条记录"
+      : detail.status === "running"
+        ? "任务运行中"
+        : "切换并继续";
+  deleteConversationButton.disabled = runIsActive || !detail || detail.status === "running";
+  exportRunReportButton.disabled = !detail || detail.status === "running";
+  deleteConversationButton.textContent = conversationDeleteArmed
+    ? "确认删除整个会话"
+    : "删除会话";
+}
+
+async function exportSelectedRunReport(): Promise<void> {
+  const detail = selectedHistoryDetail;
+  if (!detail || detail.status === "running") {
+    return;
+  }
+  exportRunReportButton.disabled = true;
+  try {
+    const result = await api.exportRunReport(detail.id);
+    if (result.saved) {
+      notify(`任务证据报告已导出${result.filePath ? `：${result.filePath}` : ""}`);
+    }
+  } catch (error) {
+    notify(errorMessage(error));
+  } finally {
+    renderContinueHistoryButton();
+  }
+}
+
+async function deleteSelectedConversation(): Promise<void> {
+  const detail = selectedHistoryDetail;
+  if (!detail || runIsActive || detail.status === "running") {
+    return;
+  }
+  if (!conversationDeleteArmed) {
+    conversationDeleteArmed = true;
+    renderContinueHistoryButton();
+    notify("再点一次将删除该会话及其所有接续记录；项目文件不会被删除。");
+    return;
+  }
+
+  const deletedSourceId = detail.id;
+  deleteConversationButton.disabled = true;
+  try {
+    const result = await api.deleteRunConversation(deletedSourceId);
+    selectedHistoryId = null;
+    selectedHistoryDetail = null;
+    conversationDeleteArmed = false;
+    await loadRunHistory();
+
+    if (
+      activeConversationRunId &&
+      !runHistory.some((run) => run.id === activeConversationRunId)
+    ) {
+      activeConversationRunId = null;
+      continuationSource = null;
+      conversationHydrated = true;
+      renderContinuationContext();
+      clearTimeline(true);
+      renderTokenUsage(null);
+    }
+
+    renderHistoryList();
+    const first = runHistory[0];
+    if (first) {
+      await showHistoryDetail(first.id);
+    } else {
+      renderEmptyHistoryDetail();
+    }
+    notify(`会话已删除，共清理 ${result.deletedCount} 条任务记录。`);
+  } catch (error) {
+    conversationDeleteArmed = false;
+    renderContinueHistoryButton();
+    notify(errorMessage(error));
+  }
 }
 
 function historyLoading(text: string): HTMLElement {
@@ -1070,6 +2618,10 @@ function historyEventText(event: AgentEvent): string {
       return `开始任务 · ${event.task}`;
     case "model_started":
       return `模型请求 · 第 ${event.step} 步`;
+    case "assistant_delta":
+      return `Agent 正在生成 · ${compactMarkdownText(event.text)}`;
+    case "model_usage":
+      return `Token 累计 · ${event.estimated ? "约 " : ""}${formatTokenCount(event.totalTokens)}（输入 ${formatTokenCount(event.promptTokens)} / 输出 ${formatTokenCount(event.completionTokens)}）`;
     case "assistant_message":
       return `Agent · ${compactMarkdownText(event.text)}`;
     case "tool_started":
@@ -1081,7 +2633,7 @@ function historyEventText(event: AgentEvent): string {
     case "run_cancelled":
       return `任务已停止 · 共执行 ${event.steps} 步`;
     case "run_failed":
-      return `任务失败 · ${event.message}`;
+      return `${event.reason === "max_steps" ? "达到步骤上限" : "任务失败"} · ${event.message}`;
   }
 }
 
@@ -1091,6 +2643,13 @@ async function loadProjectContext(showMessage = false): Promise<void> {
   }
   try {
     projectContext = await api.getProjectContext();
+    const hasMemory = Boolean(projectContext.memory.trim());
+    if (!memorySelectionInitialized) {
+      memoryEnabled = hasMemory;
+      memorySelectionInitialized = true;
+    } else if (!hasMemory) {
+      memoryEnabled = false;
+    }
     const availableIds = new Set(projectContext.skills.map((skill) => skill.id));
     for (const id of selectedSkillIds) {
       if (!availableIds.has(id)) {
@@ -1108,15 +2667,16 @@ async function loadProjectContext(showMessage = false): Promise<void> {
 }
 
 function renderContextControls(): void {
-  skillsButton.disabled = !project;
-  memoryButton.disabled = !project;
+  skillsButton.disabled = runIsActive || !project;
+  memoryButton.disabled = runIsActive || !project;
+  contextPreviewButton.disabled = runIsActive || !project;
   skillsBadge.textContent = projectContext.skills.length
     ? `${selectedSkillIds.size}/${projectContext.skills.length}`
     : "0";
   skillsButton.classList.toggle("active", selectedSkillIds.size > 0);
   const hasMemory = projectContext.memory.trim().length > 0;
-  memoryBadge.textContent = hasMemory ? "已保存" : "未设置";
-  memoryButton.classList.toggle("active", hasMemory);
+  memoryBadge.textContent = !hasMemory ? "未设置" : memoryEnabled ? "已启用" : "未启用";
+  memoryButton.classList.toggle("active", hasMemory && memoryEnabled);
 }
 
 function openSkills(): void {
@@ -1124,11 +2684,13 @@ function openSkills(): void {
     notify("请先打开一个项目。");
     return;
   }
+  skillDeleteConfirmId = null;
   renderSkillList();
   skillsDialog.showModal();
 }
 
 function renderSkillList(): void {
+  newSkillButton.disabled = runIsActive || !project;
   skillList.replaceChildren();
   if (projectContext.skills.length === 0) {
     const empty = document.createElement("div");
@@ -1138,14 +2700,16 @@ function renderSkillList(): void {
     const title = document.createElement("strong");
     title.textContent = "这个项目还没有 Skill";
     const copy = document.createElement("p");
-    copy.textContent = "在 .localforge/skills 中添加 Markdown 文件，然后重新扫描。";
+    copy.textContent = "点击“新建 Skill”创建第一条项目工作方式。";
     empty.append(mark, title, copy);
     skillList.append(empty);
     return;
   }
   for (const skill of projectContext.skills) {
+    const row = document.createElement("div");
+    row.className = "skill-option";
     const label = document.createElement("label");
-    label.className = "skill-option";
+    label.className = "skill-selector";
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = selectedSkillIds.has(skill.id);
@@ -1171,7 +2735,122 @@ function renderSkillList(): void {
       renderContextControls();
     });
     label.append(checkbox, copy);
-    skillList.append(label);
+
+    const actions = document.createElement("div");
+    actions.className = "skill-actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "skill-action";
+    edit.textContent = "编辑";
+    edit.disabled = runIsActive;
+    edit.addEventListener("click", () => void openSkillEditor(skill.id));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = `skill-action delete${skillDeleteConfirmId === skill.id ? " armed" : ""}`;
+    remove.textContent = skillDeleteConfirmId === skill.id ? "确认删除" : "删除";
+    remove.disabled = runIsActive;
+    remove.addEventListener("click", () => void deleteSkill(skill.id));
+    actions.append(edit, remove);
+    row.append(label, actions);
+    skillList.append(row);
+  }
+}
+
+function openNewSkill(): void {
+  editingSkillId = null;
+  skillEditorTitle.textContent = "新建 Skill";
+  skillFileNameInput.value = "";
+  skillFileNameInput.disabled = false;
+  skillContentInput.value = "# Skill 名称\n\n写下希望 Agent 长期遵循的项目工作方式。";
+  skillContentInput.disabled = false;
+  skillEditorError.textContent = "";
+  saveSkillButton.textContent = "创建 Skill";
+  saveSkillButton.disabled = false;
+  skillsDialog.close();
+  skillEditorDialog.showModal();
+  skillFileNameInput.focus();
+}
+
+async function openSkillEditor(id: string): Promise<void> {
+  editingSkillId = id;
+  skillEditorTitle.textContent = "编辑 Skill";
+  skillFileNameInput.value = id.split("/").at(-1) ?? "";
+  skillFileNameInput.disabled = true;
+  skillContentInput.value = "正在读取…";
+  skillContentInput.disabled = true;
+  skillEditorError.textContent = "";
+  saveSkillButton.textContent = "保存修改";
+  saveSkillButton.disabled = true;
+  skillsDialog.close();
+  skillEditorDialog.showModal();
+  try {
+    const detail = await api.getProjectSkill(id);
+    if (editingSkillId !== id || !skillEditorDialog.open) {
+      return;
+    }
+    skillContentInput.value = detail.content;
+    skillContentInput.disabled = false;
+    saveSkillButton.disabled = false;
+    skillContentInput.focus();
+    skillContentInput.setSelectionRange(0, 0);
+    skillContentInput.scrollTop = 0;
+  } catch (error) {
+    skillEditorError.textContent = errorMessage(error);
+  }
+}
+
+function closeSkillEditor(): void {
+  skillEditorDialog.close();
+  editingSkillId = null;
+  if (project && !skillsDialog.open) {
+    renderSkillList();
+    skillsDialog.showModal();
+  }
+}
+
+async function saveSkill(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  skillEditorError.textContent = "";
+  saveSkillButton.disabled = true;
+  try {
+    projectContext = await api.saveProjectSkill({
+      id: editingSkillId ?? undefined,
+      fileName: skillFileNameInput.value,
+      content: skillContentInput.value,
+    });
+    const created = !editingSkillId;
+    skillEditorDialog.close();
+    editingSkillId = null;
+    renderContextControls();
+    renderSkillList();
+    await refreshProject(false);
+    skillsDialog.showModal();
+    notify(created ? "Skill 已创建并保存到项目。" : "Skill 已更新。");
+  } catch (error) {
+    skillEditorError.textContent = errorMessage(error);
+    saveSkillButton.disabled = false;
+  }
+}
+
+async function deleteSkill(id: string): Promise<void> {
+  if (skillDeleteConfirmId !== id) {
+    skillDeleteConfirmId = id;
+    renderSkillList();
+    notify("再点一次“确认删除”；这个 Markdown 文件会从项目中移除。");
+    return;
+  }
+  try {
+    projectContext = await api.deleteProjectSkill(id);
+    selectedSkillIds.delete(id);
+    skillDeleteConfirmId = null;
+    renderContextControls();
+    renderSkillList();
+    await refreshProject(false);
+    notify("Skill 已删除。");
+  } catch (error) {
+    skillDeleteConfirmId = null;
+    renderSkillList();
+    notify(errorMessage(error));
   }
 }
 
@@ -1181,15 +2860,92 @@ function openMemory(): void {
     return;
   }
   memoryInput.value = projectContext.memory;
+  memoryEnabledInput.checked = memoryEnabled;
   memoryInput.maxLength = projectContext.maxMemoryChars;
   memoryError.textContent = "";
+  memoryDeleteArmed = false;
   renderMemoryCharacterCount();
+  renderMemoryPreview();
+  renderMemoryUseOption();
+  renderMemoryActions();
   memoryDialog.showModal();
   memoryInput.focus();
 }
 
 function renderMemoryCharacterCount(): void {
   memoryCharacterCount.textContent = `${memoryInput.value.length.toLocaleString()} / ${projectContext.maxMemoryChars.toLocaleString()}`;
+  memoryUpdatedAt.textContent = projectContext.memoryUpdatedAt
+    ? `上次保存：${formatHistoryDate(projectContext.memoryUpdatedAt)}`
+    : "尚未保存";
+}
+
+function renderMemoryPreview(): void {
+  const compact = memoryInput.value.replace(/\s+/g, " ").trim();
+  memoryPreview.textContent = compact
+    ? `注入预览：${compact.slice(0, 260)}${compact.length > 260 ? "…" : ""}`
+    : "保存后，这里会显示实际注入模型的开头。";
+}
+
+function renderMemoryUseOption(): void {
+  const hasContent = Boolean(memoryInput.value.trim());
+  memoryEnabledInput.disabled = !hasContent;
+  if (!hasContent) {
+    memoryEnabledInput.checked = false;
+  }
+  renderMemoryActions();
+}
+
+function renderMemoryActions(): void {
+  const hasSavedMemory = Boolean(projectContext.memory.trim());
+  deleteMemoryButton.disabled = runIsActive || !hasSavedMemory;
+  importMemoryButton.disabled = runIsActive || !project;
+  exportMemoryButton.disabled = runIsActive || !hasSavedMemory;
+  deleteMemoryButton.textContent = memoryDeleteArmed ? "确认删除记忆" : "删除记忆";
+  saveMemoryButton.textContent = hasSavedMemory ? "保存修改" : "创建记忆";
+}
+
+async function importMemory(): Promise<void> {
+  if (runIsActive || !project) {
+    return;
+  }
+  memoryError.textContent = "";
+  importMemoryButton.disabled = true;
+  try {
+    const imported = await api.importProjectMemory();
+    if (!imported) {
+      return;
+    }
+    projectContext = imported;
+    memoryInput.value = projectContext.memory;
+    memoryEnabledInput.checked = memoryEnabled;
+    renderMemoryCharacterCount();
+    renderMemoryPreview();
+    renderMemoryUseOption();
+    renderContextControls();
+    notify("Memory 已导入并保存；是否注入下一次任务仍由开关决定。 ");
+  } catch (error) {
+    memoryError.textContent = errorMessage(error);
+  } finally {
+    renderMemoryActions();
+  }
+}
+
+async function exportMemory(): Promise<void> {
+  if (runIsActive || !projectContext.memory.trim()) {
+    return;
+  }
+  memoryError.textContent = "";
+  exportMemoryButton.disabled = true;
+  try {
+    const result = await api.exportProjectMemory();
+    if (result.saved) {
+      notify(`Memory 已导出${result.filePath ? `：${result.filePath}` : ""}`);
+    }
+  } catch (error) {
+    memoryError.textContent = errorMessage(error);
+  } finally {
+    renderMemoryActions();
+  }
 }
 
 async function saveMemory(event: SubmitEvent): Promise<void> {
@@ -1197,10 +2953,47 @@ async function saveMemory(event: SubmitEvent): Promise<void> {
   memoryError.textContent = "";
   try {
     projectContext = await api.saveProjectMemory(memoryInput.value);
+    memoryEnabled = Boolean(projectContext.memory.trim()) && memoryEnabledInput.checked;
     renderContextControls();
     memoryDialog.close();
-    notify(projectContext.memory.trim() ? "项目记忆已保存。" : "项目记忆已清空。");
+    notify(
+      !projectContext.memory.trim()
+        ? "项目记忆已清空。"
+        : memoryEnabled
+          ? "项目记忆已保存并启用。"
+          : "项目记忆已保存，但当前未启用。",
+    );
   } catch (error) {
+    memoryError.textContent = errorMessage(error);
+  }
+}
+
+async function deleteMemory(): Promise<void> {
+  if (!projectContext.memory.trim() || runIsActive) {
+    return;
+  }
+  if (!memoryDeleteArmed) {
+    memoryDeleteArmed = true;
+    renderMemoryActions();
+    notify("再点一次将永久删除这份本地项目记忆。项目文件不会受影响。");
+    return;
+  }
+  deleteMemoryButton.disabled = true;
+  memoryError.textContent = "";
+  try {
+    projectContext = await api.deleteProjectMemory();
+    memoryEnabled = false;
+    memoryInput.value = "";
+    memoryEnabledInput.checked = false;
+    memoryDeleteArmed = false;
+    renderMemoryCharacterCount();
+    renderMemoryPreview();
+    renderMemoryUseOption();
+    renderContextControls();
+    notify("项目记忆已删除，现在可以直接创建新的 Memory。");
+  } catch (error) {
+    memoryDeleteArmed = false;
+    renderMemoryActions();
     memoryError.textContent = errorMessage(error);
   }
 }

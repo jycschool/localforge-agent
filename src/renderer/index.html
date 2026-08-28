@@ -26,7 +26,12 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <span id="model-status" class="model-status"><span></span> 未配置模型</span>
+          <div class="top-model-switcher">
+            <select id="model-profile-switch" aria-label="快速切换模型配置" disabled>
+              <option>读取模型配置…</option>
+            </select>
+            <span id="model-status" class="model-status"><span></span> 未配置模型</span>
+          </div>
           <button id="settings-button" class="button button-ghost" type="button">设置</button>
         </div>
       </header>
@@ -45,7 +50,10 @@
           <section class="panel-section changes-section">
             <div class="panel-heading">
               <h2>本次变更</h2>
-              <span id="change-count" class="count">0</span>
+              <div class="panel-heading-actions">
+                <button id="restore-all-changes" class="text-button danger-text" type="button" hidden>全部撤销</button>
+                <span id="change-count" class="count">0</span>
+              </div>
             </div>
             <div id="change-list" class="change-list">
               <p class="empty-copy">Agent 修改的文件会集中显示。</p>
@@ -73,7 +81,18 @@
               <strong id="preview-title">代码预览</strong>
               <span id="preview-meta">只读</span>
             </div>
-            <span id="preview-mode" class="preview-mode">FILE</span>
+            <div class="preview-header-actions">
+              <button id="restore-file-change" class="preview-action restore-action" type="button" hidden>
+                撤销此文件
+              </button>
+              <button id="copy-file-path" class="preview-action" type="button" disabled>
+                复制路径
+              </button>
+              <button id="copy-file-content" class="preview-action" type="button" disabled>
+                复制内容
+              </button>
+              <span id="preview-mode" class="preview-mode">FILE</span>
+            </div>
           </header>
           <section id="preview-content" class="preview-content" aria-live="polite">
             <div class="welcome-state">
@@ -115,10 +134,16 @@
         <aside class="agent-panel" aria-label="Agent 任务">
           <header class="agent-header">
             <div>
-              <h2>Agent 任务</h2>
-              <span id="run-status" class="run-status idle"><span></span> 待命</span>
+              <h2>Agent 对话</h2>
+              <div class="agent-runtime-meta">
+                <span id="run-status" class="run-status idle"><span></span> 待命</span>
+                <span id="token-usage" class="token-usage" title="本次任务的模型 Token 用量">Token —</span>
+              </div>
             </div>
             <div class="agent-header-actions">
+              <button id="new-conversation" class="button button-ghost" type="button" disabled>
+                新会话
+              </button>
               <button id="history-button" class="button button-ghost" type="button" disabled>
                 历史 <span id="history-count">0</span>
               </button>
@@ -127,14 +152,56 @@
           </header>
           <section id="timeline" class="timeline" aria-live="polite">
             <div id="timeline-empty" class="timeline-empty">
-              <strong>过程会完整留在这里</strong>
-              <p>模型思考步骤、工具调用、修改结果和命令审批都可见。</p>
+              <strong>在这里开始连续对话</strong>
+              <p>你的问题、Agent 回复、工具调用和运行结果都会按顺序保留。</p>
             </div>
+          </section>
+          <section
+            id="approval-dialog"
+            class="approval-card"
+            role="alertdialog"
+            aria-labelledby="approval-title"
+            aria-describedby="approval-reason"
+            hidden
+          >
+            <header>
+              <span class="approval-icon" aria-hidden="true">›_</span>
+              <div>
+                <span class="approval-label">命令需要确认</span>
+                <h3 id="approval-title">Agent 想运行一条命令</h3>
+              </div>
+              <span class="approval-state">等待决定</span>
+            </header>
+            <p id="approval-reason"></p>
+            <pre id="approval-command"></pre>
+            <small id="approval-cwd"></small>
+            <footer>
+              <span>暂不执行时，Agent 会收到明确的拒绝结果。</span>
+              <div>
+                <button id="reject-command" class="button button-secondary" type="button">
+                  暂不执行
+                </button>
+                <button id="approve-command" class="button button-primary" type="button">
+                  运行命令
+                </button>
+              </div>
+            </footer>
           </section>
           <form id="task-form" class="composer">
             <div class="composer-heading">
               <label for="task-input">给 Agent 一个任务</label>
               <div class="context-actions" aria-label="Agent 上下文">
+                <button
+                  id="attachments-button"
+                  class="context-button"
+                  type="button"
+                  title="选择当前项目内的文本文件；发送任务时内容会传给当前模型服务"
+                  disabled
+                >
+                  <span class="context-button-icon attachment" aria-hidden="true">＋</span>
+                  附件
+                  <span id="attachments-badge" class="context-badge">0</span>
+                </button>
                 <button id="skills-button" class="context-button" type="button" disabled>
                   <span class="context-button-icon" aria-hidden="true">◇</span>
                   Skill
@@ -145,8 +212,20 @@
                   Memory
                   <span id="memory-badge" class="context-status">未设置</span>
                 </button>
+                <button id="context-preview-button" class="context-button" type="button" disabled>
+                  <span class="context-button-icon" aria-hidden="true">≋</span>
+                  发送清单
+                </button>
               </div>
             </div>
+            <div id="continuation-context" class="continuation-context" hidden>
+              <span>
+                <small>继续历史对话</small>
+                <strong id="continuation-title"></strong>
+              </span>
+              <button id="clear-continuation" type="button" aria-label="取消继续历史对话">×</button>
+            </div>
+            <div id="attachment-list" class="attachment-list" hidden></div>
             <textarea
               id="task-input"
               rows="4"
@@ -170,6 +249,21 @@
           </div>
           <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
         </header>
+        <section class="profile-manager" aria-label="模型配置管理">
+          <label>
+            已保存配置
+            <select id="settings-profile-select"></select>
+          </label>
+          <label>
+            配置名称
+            <input id="profile-name" type="text" maxlength="40" required placeholder="例如：ModelScope 演示" />
+          </label>
+          <div class="profile-manager-actions">
+            <button id="new-model-profile" class="button button-secondary" type="button">新建配置</button>
+            <button id="delete-model-profile" class="button button-danger" type="button">删除配置</button>
+          </div>
+          <small id="profile-count">最多保存 12 个；不同配置的 Key 独立加密保存。</small>
+        </section>
         <section class="provider-preset" aria-label="推荐模型服务">
           <div>
             <span class="preset-badge">免费体验</span>
@@ -185,8 +279,13 @@
           <input id="api-base-url" type="url" required />
         </label>
         <label>
-          模型名称
-          <input id="model-name" type="text" required />
+          模型
+          <select id="model-preset">
+            <option value="Qwen/Qwen3-Coder-30B-A3B-Instruct">Qwen3 Coder 30B（推荐）</option>
+            <option value="custom">自定义模型 ID</option>
+          </select>
+          <input id="model-name" type="text" required placeholder="例如：组织名/模型名" />
+          <small>ModelScope 可用模型会动态变化；预设之外可直接填写模型页面上的 Model-Id。</small>
         </label>
         <label>
           ModelScope Token / API Key
@@ -197,6 +296,23 @@
           获取免费的 ModelScope Token ↗
         </button>
         <div class="settings-grid">
+          <label>
+            Agent 权限
+            <select id="permission-mode">
+              <option value="workspace">工作区读写（推荐）</option>
+              <option value="readOnly">只读</option>
+            </select>
+            <small>读写模式允许改文件；所有本地命令仍会逐次确认。</small>
+          </label>
+          <label>
+            响应档位
+            <select id="response-profile">
+              <option value="fast">快速 · 4K 输出预算</option>
+              <option value="balanced">标准 · 8K 输出预算</option>
+              <option value="thorough">深入 · 16K 输出预算</option>
+            </select>
+            <small>控制单轮输出上限和探索深度，不伪装成模型生成速度。</small>
+          </label>
           <label>
             最大步骤
             <input id="max-steps" type="number" min="1" max="50" required />
@@ -210,9 +326,11 @@
           <span id="settings-error" class="form-error" role="alert"></span>
           <div>
             <button class="button button-secondary" value="cancel" type="submit">取消</button>
-            <button id="save-settings" class="button button-primary" value="default" type="submit">保存设置</button>
+            <button id="test-model" class="button button-secondary" type="button">保存并测试</button>
+            <button id="save-settings" class="button button-primary" value="default" type="submit">保存配置</button>
           </div>
         </footer>
+        <section id="model-diagnostic" class="model-diagnostic" hidden aria-live="polite"></section>
       </form>
     </dialog>
 
@@ -229,7 +347,48 @@
         <section id="skill-list" class="skill-list"></section>
         <footer>
           <button id="refresh-skills" class="text-button" type="button">重新扫描</button>
-          <button class="button button-primary" value="default" type="submit">完成</button>
+          <div>
+            <button id="new-skill" class="button button-secondary" type="button">新建 Skill</button>
+            <button class="button button-primary" value="default" type="submit">完成</button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="skill-editor-dialog" class="modal context-modal">
+      <form id="skill-editor-form">
+        <header>
+          <div>
+            <span class="modal-eyebrow">PROJECT SKILL</span>
+            <h2 id="skill-editor-title">新建 Skill</h2>
+            <p>Skill 会保存为项目内的 Markdown 文件，可以随项目一起提交到 Git。</p>
+          </div>
+          <button id="close-skill-editor" class="close-button" aria-label="关闭" type="button">×</button>
+        </header>
+        <label for="skill-file-name">文件名</label>
+        <input
+          id="skill-file-name"
+          type="text"
+          placeholder="例如 testing.md"
+          autocomplete="off"
+          spellcheck="false"
+          required
+        />
+        <small class="field-help">仅支持字母、数字、短横线和下划线，并以 .md 结尾。</small>
+        <label for="skill-content">Skill 内容</label>
+        <textarea
+          id="skill-content"
+          rows="12"
+          placeholder="# 测试规范&#10;&#10;修改功能后运行相关测试，并说明验证结果。"
+          spellcheck="false"
+          required
+        ></textarea>
+        <footer>
+          <span id="skill-editor-error" class="form-error" role="alert"></span>
+          <div>
+            <button id="cancel-skill-editor" class="button button-secondary" type="button">取消</button>
+            <button id="save-skill" class="button button-primary" type="submit">创建 Skill</button>
+          </div>
         </footer>
       </form>
     </dialog>
@@ -240,7 +399,7 @@
           <div>
             <span class="modal-eyebrow">PRIVATE PROJECT MEMORY</span>
             <h2>项目记忆</h2>
-            <p>记录约定、偏好和长期背景；保存在本机，不写入项目仓库。</p>
+            <p>记录约定、偏好和长期背景；保存与本次是否启用分开控制。</p>
           </div>
           <button id="close-memory" class="close-button" aria-label="关闭" type="button">×</button>
         </header>
@@ -250,13 +409,24 @@
           rows="10"
           placeholder="例如：项目使用 pnpm；修改公共接口时必须补充单元测试；界面文案使用中文。"
         ></textarea>
+        <label class="memory-use-option" for="memory-enabled">
+          <input id="memory-enabled" type="checkbox" />
+          <span>
+            <strong>在接下来的任务中启用这段 Memory</strong>
+            <small>取消勾选只是不注入模型，不会删除已经保存的内容。</small>
+          </span>
+        </label>
         <div class="memory-meta">
-          <span>每次任务自动带入，事实仍以当前代码为准。</span>
+          <span id="memory-updated-at">尚未保存</span>
           <span id="memory-character-count">0 / 12,000</span>
         </div>
+        <div id="memory-preview" class="memory-preview">保存后，这里会显示实际注入模型的开头。</div>
         <footer>
           <span id="memory-error" class="form-error" role="alert"></span>
           <div>
+            <button id="delete-memory" class="button button-danger" type="button">删除记忆</button>
+            <button id="import-memory" class="button button-secondary" type="button">导入</button>
+            <button id="export-memory" class="button button-secondary" type="button">导出</button>
             <button id="cancel-memory" class="button button-secondary" type="button">取消</button>
             <button id="save-memory" class="button button-primary" type="submit">保存记忆</button>
           </div>
@@ -280,29 +450,63 @@
         </section>
         <footer>
           <span>最多保留当前项目最近 50 次任务，不写入 Git 仓库。</span>
-          <button class="button button-primary" value="default" type="submit">完成</button>
+          <div>
+            <button id="delete-conversation" class="button button-danger" type="button" disabled>
+              删除会话
+            </button>
+            <button id="export-run-report" class="button button-secondary" type="button" disabled>
+              导出报告
+            </button>
+            <button id="continue-history" class="button button-secondary" type="button" disabled>
+              选择一条记录
+            </button>
+            <button class="button button-primary" value="default" type="submit">关闭</button>
+          </div>
         </footer>
       </form>
     </dialog>
 
-    <dialog id="approval-dialog" class="modal approval-modal">
+    <dialog id="context-preview-dialog" class="modal context-preview-modal">
       <form method="dialog">
         <header>
           <div>
-            <span class="approval-label">需要你的批准</span>
-            <h2>允许执行这条命令吗？</h2>
+            <span class="modal-eyebrow">BEFORE SEND</span>
+            <h2>本次发送清单</h2>
+            <p>这是发送给模型前的本地估算，不会发起模型请求。</p>
           </div>
+          <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
         </header>
-        <p id="approval-reason"></p>
-        <pre id="approval-command"></pre>
-        <small id="approval-cwd"></small>
+        <section id="context-preview-content" class="context-preview-content" aria-live="polite"></section>
         <footer>
-          <span>拒绝后 Agent 会收到明确结果。</span>
-          <div>
-            <button id="reject-command" class="button button-secondary" value="cancel" type="submit">拒绝</button>
-            <button id="approve-command" class="button button-primary" value="default" type="submit">允许执行</button>
-          </div>
+          <span>Token 为近似值，最终以模型服务返回的用量为准。</span>
+          <button class="button button-primary" value="default" type="submit">知道了</button>
         </footer>
+      </form>
+    </dialog>
+
+    <dialog id="quick-open-dialog" class="modal quick-open-modal">
+      <form id="quick-open-form" method="dialog">
+        <header>
+          <div>
+            <span class="modal-eyebrow">QUICK OPEN · CTRL+P</span>
+            <h2>快速打开文件</h2>
+          </div>
+          <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
+        </header>
+        <input
+          id="quick-open-input"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="输入文件名或路径…"
+          aria-controls="quick-open-list"
+          aria-autocomplete="list"
+        />
+        <div class="quick-open-meta">
+          <span id="quick-open-count">0 个文件</span>
+          <span>↑↓ 选择 · Enter 打开 · Esc 关闭</span>
+        </div>
+        <div id="quick-open-list" class="quick-open-list" role="listbox"></div>
       </form>
     </dialog>
 

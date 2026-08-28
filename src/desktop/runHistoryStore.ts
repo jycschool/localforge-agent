@@ -15,6 +15,9 @@ const MAX_TASK_CHARS = 4_000;
 const MAX_SUMMARY_CHARS = 8_000;
 const MAX_EVENT_STRING_CHARS = 8_000;
 const MAX_MESSAGE_CONTENT_CHARS = 16_000;
+const MAX_CONTINUATION_RUNS = 12;
+const MAX_CONTINUATION_MESSAGES = 48;
+const MAX_CONTINUATION_CHARS = 64_000;
 const RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface HistoryIndex {
@@ -26,7 +29,14 @@ interface HistoryIndex {
 export interface StartRunHistoryInput {
   task: string;
   selectedFile?: string;
+  attachmentPaths?: readonly string[];
   skillIds?: readonly string[];
+  memoryUsed?: boolean;
+  model?: string;
+  modelProfileName?: string;
+  permissionMode?: RunHistorySummary["permissionMode"];
+  responseProfile?: RunHistorySummary["responseProfile"];
+  continuedFromRunId?: string;
 }
 
 export interface FinishRunHistoryInput {
@@ -56,7 +66,14 @@ export class RunHistoryStore {
       summary: "任务正在运行。",
       steps: 0,
       selectedFile: input.selectedFile?.slice(0, 1_000),
+      attachmentPaths: Array.from(new Set(input.attachmentPaths ?? [])).slice(0, 8),
       skillIds: Array.from(new Set(input.skillIds ?? [])).slice(0, 8),
+      memoryUsed: input.memoryUsed === true,
+      model: input.model?.slice(0, 200),
+      modelProfileName: input.modelProfileName?.slice(0, 80),
+      permissionMode: input.permissionMode,
+      responseProfile: input.responseProfile,
+      continuedFromRunId: input.continuedFromRunId,
       eventCount: 0,
       changedFiles: [],
       createdAt: now,
@@ -144,6 +161,83 @@ export class RunHistoryStore {
     }
   }
 
+  async deleteConversation(rootPath: string, id: string): Promise<number> {
+    this.#validateRunId(id);
+    const project = await this.#projectStorage(rootPath);
+    const index = await this.#readIndex(project.directory, project.rootPath);
+    const runsById = new Map(index.runs.map((run) => [run.id, run]));
+    if (!runsById.has(id)) {
+      throw new Error("找不到对应的任务历史记录。");
+    }
+
+    let rootId = id;
+    const ancestors = new Set<string>();
+    while (!ancestors.has(rootId)) {
+      ancestors.add(rootId);
+      const parentId = runsById.get(rootId)?.continuedFromRunId;
+      if (!parentId || !runsById.has(parentId)) {
+        break;
+      }
+      rootId = parentId;
+    }
+
+    const deletedIds = new Set<string>([rootId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const run of index.runs) {
+        if (
+          !deletedIds.has(run.id) &&
+          run.continuedFromRunId &&
+          deletedIds.has(run.continuedFromRunId)
+        ) {
+          deletedIds.add(run.id);
+          changed = true;
+        }
+      }
+    }
+
+    await this.#writeJson(this.#indexFile(project.directory), {
+      ...index,
+      runs: index.runs.filter((run) => !deletedIds.has(run.id)),
+    } satisfies HistoryIndex);
+    await Promise.all(
+      Array.from(deletedIds, (deletedId) => this.#removeRunFile(project.directory, deletedId)),
+    );
+    return deletedIds.size;
+  }
+
+  async getContinuationMessages(
+    rootPath: string,
+    id: string,
+    activeRunId?: string | null,
+  ): Promise<ChatMessage[]> {
+    this.#validateRunId(id);
+    const chain: RunHistoryDetail[] = [];
+    const seen = new Set<string>();
+    let nextId: string | undefined = id;
+
+    while (nextId && chain.length < MAX_CONTINUATION_RUNS && !seen.has(nextId)) {
+      seen.add(nextId);
+      let detail: RunHistoryDetail;
+      try {
+        detail = await this.getRun(rootPath, nextId, activeRunId);
+      } catch (error) {
+        if (chain.length === 0) {
+          throw error;
+        }
+        break;
+      }
+      if (detail.status === "running") {
+        throw new Error("运行中的任务不能作为历史对话继续。");
+      }
+      chain.unshift(detail);
+      nextId = detail.continuedFromRunId;
+    }
+
+    return trimContinuationMessages(chain.flatMap(conversationMessagesForRun));
+  }
+
   async #projectStorage(rootPath: string): Promise<{ directory: string; rootPath: string }> {
     const resolved = await realpath(rootPath);
     const normalized = process.platform === "win32" ? resolved.toLowerCase() : resolved;
@@ -203,9 +297,14 @@ function normalizeInterrupted<T extends RunHistorySummary>(
   run: T,
   activeRunId?: string | null,
 ): T {
-  return run.status === "running" && run.id !== activeRunId
-    ? { ...run, status: "interrupted", summary: "应用关闭前任务未正常结束。" }
-    : run;
+  const normalized = {
+    ...run,
+    attachmentPaths: Array.isArray(run.attachmentPaths) ? run.attachmentPaths : [],
+    memoryUsed: run.memoryUsed === true,
+  };
+  return (normalized.status === "running" && normalized.id !== activeRunId
+    ? { ...normalized, status: "interrupted", summary: "应用关闭前任务未正常结束。" }
+    : normalized) as T;
 }
 
 function sanitizeEvent(event: AgentEvent): AgentEvent {
@@ -240,6 +339,67 @@ function sanitizeMessage(message: ChatMessage): ChatMessage {
         })),
       };
   }
+}
+
+function conversationMessagesForRun(run: RunHistoryDetail): ChatMessage[] {
+  let lastUserIndex = -1;
+  for (let index = run.messages.length - 1; index >= 0; index -= 1) {
+    if (run.messages[index]?.role === "user") {
+      lastUserIndex = index;
+      break;
+    }
+  }
+  const messages = lastUserIndex >= 0 ? run.messages.slice(lastUserIndex) : [];
+  const userMessage = messages.find(
+    (message): message is Extract<ChatMessage, { role: "user" }> => message.role === "user",
+  );
+  const result: ChatMessage[] = [
+    { role: "user", content: userMessage?.content.trim() || run.task },
+  ];
+  let lastAssistantText = "";
+  for (const message of messages) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+    const content = message.content?.trim();
+    if (!content || content === lastAssistantText) {
+      continue;
+    }
+    result.push({ role: "assistant", content });
+    lastAssistantText = content;
+  }
+  const summary = run.summary.trim();
+  if (summary && summary !== "任务正在运行。" && summary !== lastAssistantText) {
+    result.push({ role: "assistant", content: summary });
+  }
+  return result;
+}
+
+function trimContinuationMessages(messages: readonly ChatMessage[]): ChatMessage[] {
+  const retained: ChatMessage[] = [];
+  let retainedChars = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || (message.role !== "user" && message.role !== "assistant")) {
+      continue;
+    }
+    const content = message.content?.trim();
+    if (!content) {
+      continue;
+    }
+    if (
+      retained.length >= MAX_CONTINUATION_MESSAGES ||
+      (retained.length > 0 && retainedChars + content.length > MAX_CONTINUATION_CHARS)
+    ) {
+      break;
+    }
+    retained.unshift({ role: message.role, content });
+    retainedChars += content.length;
+  }
+  while (retained[0]?.role === "assistant") {
+    retained.shift();
+  }
+  return retained;
 }
 
 function isMissingFile(error: unknown): boolean {

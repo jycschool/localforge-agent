@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { IPC_CHANNELS, MAX_TASK_CHARS } from "../src/desktop/contracts";
+import {
+  IPC_CHANNELS,
+  MAX_ATTACHMENT_FILES,
+  MAX_TASK_CHARS,
+} from "../src/desktop/contracts";
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
 
@@ -41,7 +45,6 @@ beforeEach(() => {
     name: "demo",
     rootPath: "C:\\workspace\\demo",
     files: [],
-    limited: false,
   });
   projectMocks.readProjectFile.mockResolvedValue({
     relativePath: "README.md",
@@ -56,18 +59,61 @@ describe("main-process IPC boundary", () => {
     await registerWithStores();
 
     const registered = electronMocks.handle.mock.calls.map((call) => call[0]);
-    expect(registered).toHaveLength(14);
-    expect(new Set(registered).size).toBe(14);
+    expect(registered).toHaveLength(31);
+    expect(new Set(registered).size).toBe(31);
     expect(registered).not.toContain(IPC_CHANNELS.agentEvent);
     expect(registered).not.toContain(IPC_CHANNELS.approvalRequested);
     expect(registered).not.toContain(IPC_CHANNELS.changesUpdated);
   });
 
+  it("validates and routes Skill, Memory, and conversation management", async () => {
+    const { contextStore, historyStore } = await registerWithStores();
+    await invoke(IPC_CHANNELS.selectProject);
+
+    await expect(invoke(IPC_CHANNELS.getProjectSkill, 7)).rejects.toThrow("Skill ID 无效");
+    await expect(invoke(IPC_CHANNELS.saveProjectSkill, null)).rejects.toThrow(
+      "Skill 内容无效",
+    );
+    await expect(
+      invoke(IPC_CHANNELS.saveProjectSkill, { fileName: "test.md", content: 7 }),
+    ).rejects.toThrow("必须是文本");
+    await invoke(IPC_CHANNELS.saveProjectSkill, {
+      fileName: "test.md",
+      content: "# Test",
+    });
+    expect(contextStore.saveSkill).toHaveBeenCalledWith("C:\\workspace\\demo", {
+      fileName: "test.md",
+      content: "# Test",
+    });
+
+    await invoke(IPC_CHANNELS.deleteProjectSkill, ".localforge/skills/test.md");
+    expect(contextStore.deleteSkill).toHaveBeenCalledWith(
+      "C:\\workspace\\demo",
+      ".localforge/skills/test.md",
+    );
+    await invoke(IPC_CHANNELS.deleteProjectMemory);
+    expect(contextStore.deleteMemory).toHaveBeenCalledWith("C:\\workspace\\demo");
+
+    await expect(invoke(IPC_CHANNELS.deleteRunConversation, {})).rejects.toThrow(
+      "任务历史 ID 无效",
+    );
+    await expect(invoke(IPC_CHANNELS.deleteRunConversation, "run-1")).resolves.toEqual({
+      deletedCount: 2,
+    });
+    expect(historyStore.deleteConversation).toHaveBeenCalledWith(
+      "C:\\workspace\\demo",
+      "run-1",
+    );
+  });
+
   it("selects a project and validates renderer-controlled file and memory inputs", async () => {
-    const { contextStore } = await registerWithStores();
+    const { contextStore, workspaceStateStore } = await registerWithStores();
 
     await expect(invoke(IPC_CHANNELS.selectProject)).resolves.toMatchObject({ name: "demo" });
     expect(projectMocks.scanProject).toHaveBeenCalledWith("C:\\workspace\\demo");
+    expect(workspaceStateStore.saveLastProjectPath).toHaveBeenCalledWith(
+      "C:\\workspace\\demo",
+    );
 
     await expect(invoke(IPC_CHANNELS.readFile, 42)).rejects.toThrow("文件路径无效");
     await expect(invoke(IPC_CHANNELS.readFile, "README.md")).resolves.toMatchObject({
@@ -86,6 +132,26 @@ describe("main-process IPC boundary", () => {
       "C:\\workspace\\demo",
       "Use pnpm test",
     );
+  });
+
+  it("restores only the persisted project and clears an inaccessible path", async () => {
+    const { workspaceStateStore } = await registerWithStores();
+
+    await expect(invoke(IPC_CHANNELS.restoreProject)).resolves.toMatchObject({ name: "demo" });
+    expect(projectMocks.scanProject).toHaveBeenCalledWith("C:\\workspace\\demo");
+
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      projectMocks.scanProject.mockRejectedValueOnce(new Error("missing"));
+      await expect(invoke(IPC_CHANNELS.restoreProject)).resolves.toBeNull();
+      expect(workspaceStateStore.clearLastProjectPath).toHaveBeenCalledOnce();
+      expect(warning).toHaveBeenCalledWith(
+        "Failed to restore the last project",
+        expect.any(Error),
+      );
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it("rejects malformed history and approval inputs before they reach stores", async () => {
@@ -135,8 +201,41 @@ describe("main-process IPC boundary", () => {
       invoke(IPC_CHANNELS.startRun, { task: "Inspect", selectedFile: 7 }),
     ).rejects.toThrow("当前文件路径无效");
     await expect(
+      invoke(IPC_CHANNELS.startRun, { task: "Inspect", attachmentPaths: "README.md" }),
+    ).rejects.toThrow("附件选择无效");
+    await expect(
+      invoke(IPC_CHANNELS.startRun, {
+        task: "Inspect",
+        attachmentPaths: Array.from(
+          { length: MAX_ATTACHMENT_FILES + 1 },
+          (_, index) => `${index}.txt`,
+        ),
+      }),
+    ).rejects.toThrow(`一次最多添加 ${MAX_ATTACHMENT_FILES} 个项目文件`);
+    await expect(
+      invoke(IPC_CHANNELS.startRun, { task: "Inspect", attachmentPaths: ["README.md", 7] }),
+    ).rejects.toThrow("附件选择无效");
+    await expect(
       invoke(IPC_CHANNELS.startRun, { task: "Inspect", skillIds: ["safe", 7] }),
     ).rejects.toThrow("Skill 选择无效");
+    await expect(
+      invoke(IPC_CHANNELS.startRun, { task: "Inspect", useMemory: "yes" }),
+    ).rejects.toThrow("Memory 选择无效");
+    await expect(
+      invoke(IPC_CHANNELS.startRun, { task: "Inspect", continueFromRunId: 7 }),
+    ).rejects.toThrow("历史对话选择无效");
+    await expect(invoke(IPC_CHANNELS.previewRunContext, null)).rejects.toThrow(
+      "任务请求无效",
+    );
+    await expect(invoke(IPC_CHANNELS.previewRunContext, { task: "   " })).rejects.toThrow(
+      "请先输入任务说明",
+    );
+    await expect(invoke(IPC_CHANNELS.restoreChanges, null)).rejects.toThrow(
+      "恢复请求无效",
+    );
+    await expect(invoke(IPC_CHANNELS.exportRunReport, 7)).rejects.toThrow(
+      "任务历史 ID 无效",
+    );
     expect(configStore.publicSettings).not.toHaveBeenCalled();
   });
 
@@ -148,13 +247,39 @@ describe("main-process IPC boundary", () => {
       maxSteps: 8,
       commandTimeoutMs: 10_000,
       maxOutputChars: 5_000,
+      permissionMode: "workspace",
+      responseProfile: "balanced",
     };
 
+    await expect(invoke(IPC_CHANNELS.saveSettings, null)).rejects.toThrow(
+      "模型设置内容无效",
+    );
     await invoke(IPC_CHANNELS.saveSettings, input);
     expect(configStore.save).toHaveBeenCalledWith(input);
+    await expect(invoke(IPC_CHANNELS.getModelProfiles)).resolves.toMatchObject({
+      activeProfileId: "default",
+    });
+    await expect(invoke(IPC_CHANNELS.saveModelProfile, null)).rejects.toThrow(
+      "模型配置内容无效",
+    );
+    await invoke(IPC_CHANNELS.saveModelProfile, { ...input, name: "课程演示" });
+    expect(configStore.saveModelProfile).toHaveBeenCalledWith({
+      ...input,
+      name: "课程演示",
+    });
+    await expect(invoke(IPC_CHANNELS.activateModelProfile, 7)).rejects.toThrow(
+      "模型配置 ID 无效",
+    );
+    await invoke(IPC_CHANNELS.activateModelProfile, "profile-2");
+    expect(configStore.activateModelProfile).toHaveBeenCalledWith("profile-2");
+    await invoke(IPC_CHANNELS.deleteModelProfile, "profile-2");
+    expect(configStore.deleteModelProfile).toHaveBeenCalledWith("profile-2");
     await invoke(IPC_CHANNELS.openModelScopeTokenPage);
     expect(electronMocks.openExternal).toHaveBeenCalledWith(
       "https://modelscope.cn/my/myaccesstoken",
+    );
+    await expect(invoke(IPC_CHANNELS.testModelConnection)).rejects.toThrow(
+      "请先保存 API Key",
     );
   });
 });
@@ -169,25 +294,59 @@ async function registerWithStores() {
       maxSteps: 8,
       commandTimeoutMs: 10_000,
       maxOutputChars: 5_000,
+      permissionMode: "workspace",
+      responseProfile: "balanced",
       hasApiKey: false,
       apiKeySource: "missing",
     })),
     save: vi.fn(async () => undefined),
+    modelProfiles: vi.fn(async () => ({
+      activeProfileId: "default",
+      profiles: [],
+      maxProfiles: 12,
+    })),
+    saveModelProfile: vi.fn(async () => ({
+      activeProfileId: "default",
+      profiles: [],
+      maxProfiles: 12,
+    })),
+    activateModelProfile: vi.fn(async () => undefined),
+    deleteModelProfile: vi.fn(async () => ({
+      activeProfileId: "default",
+      profiles: [],
+      maxProfiles: 12,
+    })),
+    recordActiveDiagnostic: vi.fn(async () => undefined),
   };
   const contextStore = {
+    deleteMemory: vi.fn(async () => ({ skills: [], memory: "" })),
+    deleteSkill: vi.fn(async () => ({ skills: [], memory: "" })),
     getContext: vi.fn(async () => ({ skills: [], memory: "" })),
     getMemory: vi.fn(async () => ""),
+    getSkill: vi.fn(async () => ({ id: "test", content: "# Test" })),
     getSelectedSkills: vi.fn(async () => []),
     saveMemory: vi.fn(async () => ({ skills: [], memory: "Use pnpm test" })),
+    saveSkill: vi.fn(async () => ({ skills: [], memory: "" })),
   };
   const historyStore = {
+    deleteConversation: vi.fn(async () => 2),
     finishRun: vi.fn(),
     getRun: vi.fn(),
     listRuns: vi.fn(async () => []),
     startRun: vi.fn(),
   };
-  registerIpc(configStore as never, contextStore as never, historyStore as never);
-  return { configStore, contextStore, historyStore };
+  const workspaceStateStore = {
+    clearLastProjectPath: vi.fn(async () => undefined),
+    lastProjectPath: vi.fn(async () => "C:\\workspace\\demo"),
+    saveLastProjectPath: vi.fn(async () => undefined),
+  };
+  registerIpc(
+    configStore as never,
+    contextStore as never,
+    historyStore as never,
+    workspaceStateStore as never,
+  );
+  return { configStore, contextStore, historyStore, workspaceStateStore };
 }
 
 async function invoke(channel: string, ...args: unknown[]): Promise<unknown> {

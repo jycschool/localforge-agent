@@ -29,11 +29,25 @@ describe("run history store", () => {
     const id = await store.startRun(projectPath, {
       task: "整理前端结构",
       selectedFile: "src/renderer/app.ts",
+      attachmentPaths: ["README.md", "README.md", "docs/design.md"],
       skillIds: ["review", "review"],
+      memoryUsed: true,
+      model: "qwen-test",
+      permissionMode: "workspace",
+      responseProfile: "balanced",
     });
 
     expect(await store.listRuns(projectPath, id)).toMatchObject([
-      { id, status: "running", skillIds: ["review"] },
+      {
+        id,
+        status: "running",
+        attachmentPaths: ["README.md", "docs/design.md"],
+        skillIds: ["review"],
+        memoryUsed: true,
+        model: "qwen-test",
+        permissionMode: "workspace",
+        responseProfile: "balanced",
+      },
     ]);
     expect(await store.listRuns(projectPath)).toMatchObject([
       { id, status: "interrupted", summary: "应用关闭前任务未正常结束。" },
@@ -78,5 +92,65 @@ describe("run history store", () => {
 
     await expect(store.getRun(projectPath, "../index")).rejects.toThrow("ID 无效");
     await expect(store.getRun(secondProjectPath, id)).rejects.toThrow("找不到");
+  });
+
+  it("rebuilds a bounded conversational chain when a later task continues history", async () => {
+    const parentId = await store.startRun(projectPath, { task: "检查登录流程" });
+    await store.finishRun(projectPath, parentId, {
+      status: "completed",
+      summary: "发现用户名没有去除首尾空格。",
+      steps: 1,
+      events: [],
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "检查登录流程" },
+        { role: "assistant", content: "发现用户名没有去除首尾空格。" },
+      ],
+      changedFiles: [],
+    });
+    const childId = await store.startRun(projectPath, {
+      task: "那就修复它",
+      continuedFromRunId: parentId,
+    });
+    await store.finishRun(projectPath, childId, {
+      status: "completed",
+      summary: "已经修复并补充测试。",
+      steps: 2,
+      events: [],
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "那就修复它" },
+        { role: "assistant", content: "已经修复并补充测试。" },
+      ],
+      changedFiles: ["src/login.ts"],
+    });
+
+    await expect(store.getRun(projectPath, childId)).resolves.toMatchObject({
+      continuedFromRunId: parentId,
+    });
+    await expect(store.getContinuationMessages(projectPath, childId)).resolves.toEqual([
+      { role: "user", content: "检查登录流程" },
+      { role: "assistant", content: "发现用户名没有去除首尾空格。" },
+      { role: "user", content: "那就修复它" },
+      { role: "assistant", content: "已经修复并补充测试。" },
+    ]);
+  });
+
+  it("deletes a complete conversation chain without touching other conversations", async () => {
+    const parentId = await store.startRun(projectPath, { task: "第一问" });
+    const childId = await store.startRun(projectPath, {
+      task: "继续追问",
+      continuedFromRunId: parentId,
+    });
+    const unrelatedId = await store.startRun(projectPath, { task: "另一段会话" });
+
+    await expect(store.deleteConversation(projectPath, childId)).resolves.toBe(2);
+
+    expect((await store.listRuns(projectPath)).map((run) => run.id)).toEqual([unrelatedId]);
+    await expect(store.getRun(projectPath, parentId)).rejects.toThrow("找不到");
+    await expect(store.getRun(projectPath, childId)).rejects.toThrow("找不到");
+    await expect(store.getRun(projectPath, unrelatedId)).resolves.toMatchObject({
+      task: "另一段会话",
+    });
   });
 });

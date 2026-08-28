@@ -4,22 +4,29 @@
 
 | 需求 | 设计/实现 | 计划测试 | 演示证据 |
 | --- | --- | --- | --- |
-| FR-01 打开项目 | `main.ts`、`desktop/projectService.ts` | 项目扫描、目录选择人工测试 | 打开演示目录并显示项目名 |
-| FR-02 查看代码 | `renderer/app.ts`、`readProjectFile` | UTF-8、大小和越界测试 | 从目录树打开源文件 |
+| FR-01 打开项目 | `main.ts`、`desktop/projectService.ts`、`WorkspaceStateStore` | 项目扫描、工作区状态与 IPC 测试 | 打开演示目录；重启自动恢复，失效路径安全降级 |
+| FR-02 查看代码 | `renderer/app.ts`、`renderer/quickOpen.ts`、`readProjectFile` | UTF-8、大小、越界和快速搜索排序测试 | `Ctrl+P` 打开源文件并检查行号、复制操作 |
 | FR-03 提交任务 | `renderer/app.ts`、`main.ts` | 空任务、20,000 字符上限、并发任务和无项目测试 | 在独立窗口提交真实任务 |
 | FR-04 检索读取 | `tools/workspaceTools.ts` | `workspaceTools.test.ts`、路径测试 | 时间线展示搜索和读取 |
 | FR-05 修改文件 | WorkspaceTools、ChangeTracker | 精确替换、新建、含糊匹配 | 源文件和测试文件产生变更 |
 | FR-06 执行命令 | `run_command`、主进程审批、审批/执行分段计时 | 批准、拒绝、超时、取消 | 展示审批框、真实退出码与独立执行耗时 |
 | FR-07 工具循环 | `agent/agentLoop.ts` | `agentLoop.test.ts` | 失败输出进入下一轮 |
-| FR-08 停止条件 | AgentLoop、AbortController | 取消和最大步骤测试 | 展示停止按钮和步骤设置 |
-| FR-09 过程观察 | AgentEvent、Renderer timeline | 事件映射和桌面人工测试 | 时间线展示读、改、测 |
+| FR-08 停止条件 | AgentLoop、AbortController、步骤恢复按钮 | 取消和最大步骤原因测试 | 展示停止按钮、步骤设置、中文耗尽说明和继续入口 |
+| FR-09 过程观察 | AgentEvent、连续 conversation feed、历史恢复 | 原始任务事件测试和桌面人工测试 | 双方消息及读、改、测按顺序展示 |
 | FR-10 变更审查 | ChangeTracker、Renderer Diff | 首次快照和双栏渲染 | 从变更列表打开 Diff |
 | FR-11 验证证据 | `run_command`、output panel、`14-real-model-validation.md` | exit code、stdout/stderr | 真实模型首测 2/6、二测 6/6、外部复核 6/6 |
 | FR-12 模型配置 | ConfigStore、ModelClient | URL/数值验证、Key 隔离 | 展示模型名，不展示 Key |
-| FR-13 项目 Skill | ProjectContextStore、systemPrompt、上下文弹窗 | `projectContextStore.test.ts`、`systemPrompt.test.ts` | 勾选 Skill 后执行任务 |
-| FR-14 项目 Memory | ProjectContextStore、Memory 弹窗 | 保存、更新、长度、项目隔离测试 | 保存后重新打开并执行任务 |
-| FR-15 任务历史 | RunHistoryStore、历史弹窗、历史 IPC | `runHistoryStore.test.ts`、桌面窗口人工检查 | 打开历史并回看状态、事件和改动文件 |
+| FR-13 项目 Skill | ProjectContextStore、Skill CRUD 白名单 IPC、上下文与编辑弹窗、systemPrompt | 创建/读取/编辑/删除、文件名与目录安全、选择注入测试 | 新建、编辑、选择并删除 Skill |
+| FR-14 项目 Memory | ProjectContextStore、Memory 创建/删除 IPC、启用开关、`useMemory` IPC | 保存、更新、明确删除、长度、项目隔离和 IPC 类型测试 | 创建后分别启用/停用，再二次确认删除 |
+| FR-15 会话与任务历史 | RunHistoryStore、活动会话 id、历史弹窗、`continueFromRunId`、会话链删除 IPC、按项目任务草稿 | 接续链重建/整段删除、草稿隔离、`agentLoop.test.ts`、桌面重启检查 | 连续追问、新建会话、从历史切换继续、重启恢复草稿并删除整段会话 |
 | FR-16 严格模型协议 | OpenAICompatibleClient、AgentLoop 空回复保护 | `openAICompatibleClient.test.ts`、`agentLoop.test.ts` | 损坏或空回复明确失败，不显示完成 |
+| FR-17 任务附件 | 系统文件选择器、`taskContext.ts`、附件标签、`attachmentPaths` IPC | `taskContext.test.ts`、`mainIpc.test.ts`、`preload.test.ts` | 添加/移除项目文本文件并发送任务 |
+| FR-18 权限/模型/档位/Token | `permissions.ts`、ConfigStore、OpenAICompatibleClient、设置与 Token 状态标记 | `permissions.test.ts`、`configStore.test.ts`、`openAICompatibleClient.test.ts`、`agentLoop.test.ts` | 切换只读后检查工具；执行任务观察精确值或 `≈` 估算 |
+| FR-19 模型能力自检 | `modelDiagnostics.ts`、设置页分项结果 | `modelDiagnostics.test.ts` | 保存并测试后展示连接、流式、usage 和工具调用 |
+| FR-20 发送前上下文清单 | `runContextPreview.ts`、发送清单弹窗 | `runContextPreview.test.ts` | 展示预计 Token、上下文组成与警告，不调用模型 |
+| FR-21 安全变更恢复 | `changeRestore.ts`、Diff/变更区恢复入口 | `changeRestore.test.ts` | 单文件恢复；外部改动冲突时明确拒绝 |
+| FR-22 Memory/任务证据携带 | Memory 导入导出 IPC、`runReport.ts` | ProjectContext/Preload/RunReport 测试 | 展示更新时间与预览，导出 Memory 和历史报告 |
+| FR-23 多模型配置切换 | ConfigStore v2、模型配置 IPC、顶栏切换和设置管理 | `configStore.test.ts`、`preload.test.ts`、`mainIpc.test.ts` | 新建第二配置、自检、顶栏切回并确认历史模型标记 |
 
 ## 非功能追踪
 
@@ -27,12 +34,12 @@
 | --- | --- | --- |
 | NFR-01 路径安全 | lexical + realpath 检查、跳过符号链接 | `pathSafety.test.ts`、`projectService.test.ts` |
 | NFR-02 最小权限 | sandbox、contextIsolation、Preload 白名单、命令敏感环境隔离 | `preload.test.ts`、`workspaceTools.test.ts`、桌面启动检查 |
-| NFR-03 可控 | 最大步骤、AbortSignal、可取消文件遍历、逐次审批、进程树终止 | Agent 取消/步数、遍历取消、命令超时/取消/子进程清理测试 |
+| NFR-03 可控 | 最大步骤、重复失败熔断、AbortSignal、可取消文件遍历、逐次审批、进程树终止 | Agent 取消/步数/重复失败、遍历取消、命令超时/取消/子进程清理测试 |
 | NFR-04 可观察 | AgentEvent、timeline、output panel、任务历史 | 窗口检查、真实模型 38 条事件和端到端视频 |
 | NFR-05 可靠 | 严格响应解析、结构化工具错误和持久化 run 状态 | ModelClient、AgentLoop、RunHistoryStore 测试 |
-| NFR-06 性能 | 目录过滤、结果上限提前终止、2,000 文件/Agent 单文件 1 MB 上限、目录懒渲染、UI 输出上限 | 工作区/项目服务单测、大项目人工检查 |
+| NFR-06 性能 | 目录过滤、完整轻量扫描、Agent 查询结果提前终止、单文件 1 MB 上限、附件正文 24k/64k 上限、目录懒渲染、UI 输出上限 | `projectService.test.ts`、`workspaceTools.test.ts`、`taskContext.test.ts`、大项目人工检查 |
 | NFR-07 可维护 | contracts、ModelClient、ToolRegistry 接口 | 模块依赖评审、类型检查 |
-| NFR-08 可测试 | 核心模块与 Preload/主进程 IPC/配置/富文本/路径脱敏边界可隔离验证 | 当前 70 项自动化测试 |
+| NFR-08 可测试 | 核心模块与 Preload/主进程 IPC/配置/工作区状态/快速打开/草稿/富文本/路径脱敏边界可隔离验证 | 当前 112 项自动化测试 |
 
 ## 交付追踪
 
@@ -41,3 +48,16 @@
 | 公开 Git 仓库 | 全部源码与文档 | URL 可访问，历史真实，截止后无推送 |
 | README.txt | README 与最终实现摘要 | 少于 1000 汉字，含 URL、运行和特色 |
 | 两分钟视频 | UC-01、UC-02、UC-04 | MP4 小于 200 MB，无凭据，展示完整闭环 |
+
+## 生命周期过程追踪
+
+| 阶段 | 输入基线 | 活动/实现证据 | 退出证据 | 状态 |
+| --- | --- | --- | --- | --- |
+| 可行性 | 考核题目、技术约束 | ADR-0001/0002、原型和仓库历史 | 独立桌面方向确定 | 已完成 |
+| 需求 | 产品目标和范围 | PRD、23 个 FR、9 个 NFR、15 个 UC | 需求可测试、范围外明确 | 已完成并受控 |
+| 设计 | 需求/用例基线 | 总体设计、UI 原型、数据流、状态机和安全边界 | 模块和契约可映射到源码 | 已完成并受控 |
+| 编码 | 架构与接口 | Agent、ModelClient、工具、桌面服务、Renderer | 核心闭环实现，相关测试通过 | 核心完成 |
+| 验证 | 候选构建 | 112 项测试、真实模型、桌面检查、交付脚本 | 无阻塞缺陷、演示稳定 | 进行中 |
+| 发布 | 验证通过的提交 | 视频、README.txt、最终推送和压缩包 | 20:00 冻结并复核材料 | 待执行 |
+
+阶段门禁、工作量估算、效能指标和流水线设计统一见 [16-midterm-lifecycle-baseline.md](16-midterm-lifecycle-baseline.md)。该表追踪过程状态，不替代上方 FR/NFR 的实现追踪。

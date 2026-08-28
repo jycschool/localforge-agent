@@ -7,6 +7,13 @@ export interface FunctionToolCall {
   };
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimated: boolean;
+}
+
 export type ChatMessage =
   | { role: "system"; content: string }
   | { role: "user"; content: string }
@@ -32,6 +39,8 @@ export interface ModelClient {
     messages: readonly ChatMessage[],
     tools: readonly FunctionToolSchema[],
     signal: AbortSignal,
+    onTextDelta?: (text: string) => void,
+    onUsage?: (usage: TokenUsage) => void,
   ): Promise<Extract<ChatMessage, { role: "assistant" }>>;
 }
 
@@ -63,9 +72,16 @@ export interface AgentTool {
 export type AgentEvent =
   | { type: "run_started"; task: string }
   | { type: "model_started"; step: number }
+  | { type: "assistant_delta"; step: number; text: string }
+  | ({ type: "model_usage"; step: number } & TokenUsage)
   | { type: "assistant_message"; text: string }
   | { type: "tool_started"; id: string; name: string; arguments: Record<string, unknown> }
   | { type: "tool_finished"; id: string; name: string; result: ToolResult; durationMs: number }
   | { type: "run_completed"; summary: string; steps: number }
   | { type: "run_cancelled"; steps: number }
-  | { type: "run_failed"; message: string; steps: number };
+  | {
+      type: "run_failed";
+      message: string;
+      steps: number;
+      reason?: "max_steps";
+    };

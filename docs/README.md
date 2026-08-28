@@ -19,6 +19,7 @@
 | [13-assessment-compliance.md](13-assessment-compliance.md) | PDF 考核原文到实现、测试和交付证据的逐条映射 | 执行中 |
 | [14-real-model-validation.md](14-real-model-validation.md) | ModelScope 真实模型读、改、测闭环、重复运行与限流记录 | 已完成三轮 |
 | [15-interview-defense.md](15-interview-defense.md) | 常见追问、可辩护回答、源码带看顺序与表述边界 | 已完成 |
+| [16-midterm-lifecycle-baseline.md](16-midterm-lifecycle-baseline.md) | 中期基线、裁剪瀑布、架构评审、PERT 估算、质量/效能、流水线与系统验收 | 已建立 |
 | [decisions/0001-vscode-extension.md](decisions/0001-vscode-extension.md) | 初始 VS Code 形态决策 | 已被取代 |
 | [decisions/0002-standalone-desktop.md](decisions/0002-standalone-desktop.md) | 改为独立桌面 Agent 的决策 | 已接受 |
 
@@ -29,3 +30,4 @@
 - 每日收尾更新计划状态、日志、验证证据与剩余风险。
 - 发布前清理占位符，并确保文档、源码、视频和答辩表述一致。
 - 提交和推送按真实里程碑进行，不伪造日期或用空提交制造开发周期。
+- 中期总文档负责阶段门禁和跨文档口径；专题细节仍在对应编号文档维护，避免复制后相互冲突。

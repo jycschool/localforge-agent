@@ -19,8 +19,18 @@ export class ChangeTracker {
     })).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
   }
 
+  public get(relativePath: string): ChangedFile | undefined {
+    if (!this.originals.has(relativePath)) {
+      return undefined;
+    }
+    return { relativePath, originalContent: this.originals.get(relativePath) ?? null };
+  }
+
+  public remove(relativePath: string): boolean {
+    return this.originals.delete(relativePath);
+  }
+
   public clear(): void {
     this.originals.clear();
   }
 }
-

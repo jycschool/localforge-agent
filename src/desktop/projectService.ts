@@ -19,18 +19,13 @@ const IGNORED_DIRECTORIES = new Set([
   "target",
   "venv",
 ]);
-const MAX_FILES = 2_000;
 const MAX_PREVIEW_BYTES = 1_000_000;
 
 export async function scanProject(rootPath: string): Promise<ProjectSnapshot> {
   const rootRealPath = await realpath(rootPath);
   const files: ProjectFile[] = [];
-  let limited = false;
 
   async function walk(directory: string): Promise<void> {
-    if (limited) {
-      return;
-    }
     const entries = await readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
@@ -47,14 +42,8 @@ export async function scanProject(rootPath: string): Promise<ProjectSnapshot> {
       if (!entry.isFile()) {
         continue;
       }
-      if (files.length >= MAX_FILES) {
-        limited = true;
-        return;
-      }
-      const info = await stat(absolutePath);
       files.push({
         relativePath: normalizeRelative(path.relative(rootRealPath, absolutePath)),
-        size: info.size,
       });
     }
   }
@@ -64,7 +53,6 @@ export async function scanProject(rootPath: string): Promise<ProjectSnapshot> {
     name: path.basename(rootRealPath),
     rootPath: rootRealPath,
     files,
-    limited,
   };
 }
 

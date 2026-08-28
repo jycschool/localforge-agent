@@ -26,7 +26,25 @@ describe("desktop project service", () => {
     const project = await scanProject(rootPath);
 
     expect(project.files.map((file) => file.relativePath)).toEqual(["src/app.ts"]);
-    expect(project.limited).toBe(false);
+  });
+
+  it("returns every source file instead of truncating large projects", async () => {
+    const sourcePath = path.join(rootPath, "src");
+    await mkdir(sourcePath, { recursive: true });
+    const fileCount = 2_005;
+    const batchSize = 200;
+    for (let offset = 0; offset < fileCount; offset += batchSize) {
+      await Promise.all(
+        Array.from({ length: Math.min(batchSize, fileCount - offset) }, (_, index) =>
+          writeFile(path.join(sourcePath, `file-${offset + index}.ts`), ""),
+        ),
+      );
+    }
+
+    const project = await scanProject(rootPath);
+
+    expect(project.files).toHaveLength(fileCount);
+    expect(project.files.some((file) => file.relativePath === "src/file-2004.ts")).toBe(true);
   });
 
   it("reads a UTF-8 project file and reports its preview language", async () => {
