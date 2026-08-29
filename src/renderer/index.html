@@ -65,7 +65,10 @@
           ></div>
           <section class="panel-section changes-section">
             <div class="panel-heading">
-              <h2>本次变更</h2>
+              <div class="change-heading-copy">
+                <h2>本次变更</h2>
+                <span id="change-summary" class="change-summary">等待 Agent 修改</span>
+              </div>
               <div class="panel-heading-actions">
                 <button id="restore-all-changes" class="text-button danger-text" type="button" hidden>全部撤销</button>
                 <span id="change-count" class="count">0</span>
@@ -141,11 +144,28 @@
             title="上下拖动调整高度，双击恢复"
           ></div>
           <section class="output-panel" aria-label="运行输出">
-            <header>
-              <strong>运行输出</strong>
-              <button id="clear-output" class="text-button" type="button">清空</button>
+            <header class="output-toolbar">
+              <div class="output-heading-copy">
+                <strong>运行输出</strong>
+                <span id="output-summary">等待命令</span>
+              </div>
+              <div class="output-actions">
+                <div class="output-filters" role="group" aria-label="筛选运行输出">
+                  <button class="output-filter active" type="button" data-output-filter="all">全部</button>
+                  <button class="output-filter" type="button" data-output-filter="error">错误</button>
+                  <button class="output-filter" type="button" data-output-filter="test">测试</button>
+                </div>
+                <button id="output-follow" class="text-button active" type="button" aria-pressed="true">自动跟随</button>
+                <button id="clear-output" class="text-button" type="button">清空</button>
+              </div>
             </header>
-            <pre id="output-log">命令输出会显示在这里；文件内容和工具摘要请在右侧过程区查看。</pre>
+            <div id="validation-progress" class="validation-progress" hidden></div>
+            <div id="output-log" class="command-output-list">
+              <div class="output-empty">
+                <span class="output-empty-mark">&gt;_</span>
+                <p>命令输出会按执行次数整理；文件工具仍在右侧过程区展示。</p>
+              </div>
+            </div>
           </section>
         </main>
 

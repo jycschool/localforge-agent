@@ -40,6 +40,13 @@ import {
 } from "./features/manualEditor";
 import { setupPanelResizing } from "./features/panelResizing";
 import { rankQuickOpen, type QuickOpenMatch } from "./features/quickOpen";
+import {
+  changeEvidence,
+  parseCommandEvidence,
+  testEvidenceProgress,
+  type CommandEvidence,
+  type TestEvidence,
+} from "./features/runEvidence";
 import { clearTaskDraft, loadTaskDraft, saveTaskDraft } from "./features/taskDraft";
 import { fileVisualFor } from "./shared/fileIcons";
 import { displayLocalPath } from "./shared/pathDisplay";
@@ -75,6 +82,17 @@ interface PlanDraftItem {
   id?: string;
   title: string;
 }
+
+interface CommandOutputEntry {
+  id: string;
+  command: string;
+  reason: string;
+  state: "running" | CommandEvidence["state"];
+  evidence?: CommandEvidence;
+  expanded: boolean;
+}
+
+type OutputFilter = "all" | "error" | "test";
 
 const api = window.localForge;
 const AGENT_DISPLAY_NAME = "RepoForge";
@@ -137,10 +155,15 @@ let activeRunEvents: AgentEvent[] = [];
 let liveOutcomeCard: HTMLElement | null = null;
 let historyReplayTimer: number | undefined;
 let historyReplayRunning = false;
+let outputFilter: OutputFilter = "all";
+let outputAutoFollow = true;
 const expandedDirectories = new Set<string>();
 const activeToolTimelineItems = new Map<string, HTMLElement>();
+const reviewedChangePaths = new Set<string>();
+const commandOutputEntries: CommandOutputEntry[] = [];
 const MAX_TIMELINE_ITEMS = 500;
 const MAX_CONVERSATION_HISTORY_RUNS = 12;
+const MAX_COMMAND_OUTPUT_ENTRIES = 30;
 
 const openProjectButton = element<HTMLButtonElement>("open-project");
 const welcomeOpenProjectButton = element<HTMLButtonElement>("welcome-open-project");
@@ -151,6 +174,7 @@ const projectPath = element<HTMLElement>("project-path");
 const fileTree = element<HTMLElement>("file-tree");
 const changeList = element<HTMLElement>("change-list");
 const changeCount = element<HTMLElement>("change-count");
+const changeSummary = element<HTMLElement>("change-summary");
 const previewTitle = element<HTMLElement>("preview-title");
 const previewMeta = element<HTMLElement>("preview-meta");
 const previewMode = element<HTMLElement>("preview-mode");
@@ -163,6 +187,9 @@ const cancelFileEditButton = element<HTMLButtonElement>("cancel-file-edit");
 const restoreFileChangeButton = element<HTMLButtonElement>("restore-file-change");
 const restoreAllChangesButton = element<HTMLButtonElement>("restore-all-changes");
 const outputLog = element<HTMLElement>("output-log");
+const outputSummary = element<HTMLElement>("output-summary");
+const validationProgress = element<HTMLElement>("validation-progress");
+const outputFollowButton = element<HTMLButtonElement>("output-follow");
 const clearOutputButton = element<HTMLButtonElement>("clear-output");
 const timeline = element<HTMLElement>("timeline");
 const runStatus = element<HTMLElement>("run-status");
@@ -298,8 +325,21 @@ openProjectButton.addEventListener("click", () => void selectProject());
 welcomeOpenProjectButton.addEventListener("click", () => void selectProject());
 refreshProjectButton.addEventListener("click", () => void refreshProject());
 newFileButton.addEventListener("click", openNewFileDialog);
-clearOutputButton.addEventListener("click", () => {
-  outputLog.textContent = "命令输出会显示在这里；文件内容和工具摘要请在右侧过程区查看。";
+clearOutputButton.addEventListener("click", clearCommandOutput);
+outputFollowButton.addEventListener("click", () => {
+  outputAutoFollow = !outputAutoFollow;
+  outputFollowButton.classList.toggle("active", outputAutoFollow);
+  outputFollowButton.setAttribute("aria-pressed", String(outputAutoFollow));
+  outputFollowButton.textContent = outputAutoFollow ? "自动跟随" : "已暂停跟随";
+  if (outputAutoFollow) outputLog.scrollTop = outputLog.scrollHeight;
+});
+document.querySelectorAll<HTMLButtonElement>("[data-output-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const nextFilter = button.dataset.outputFilter as OutputFilter | undefined;
+    if (!nextFilter) return;
+    outputFilter = nextFilter;
+    renderCommandOutput();
+  });
 });
 settingsButton.addEventListener("click", () => void openSettings());
 modelProfileSwitch.addEventListener("change", () => void switchModelProfile());
@@ -413,6 +453,10 @@ api.onApprovalRequested(showApproval);
 api.onPlanApprovalRequested(showPlanApproval);
 api.onChangesUpdated((nextChanges) => {
   changes = nextChanges;
+  const currentPaths = new Set(nextChanges.map((change) => change.relativePath));
+  for (const path of reviewedChangePaths) {
+    if (!currentPaths.has(path)) reviewedChangePaths.delete(path);
+  }
   restoreArmKey = null;
   renderChanges();
   refreshLiveOutcomeCard();
@@ -462,6 +506,8 @@ async function activateProject(selected: ProjectSnapshot): Promise<void> {
   manualEditor = null;
   manualCancelArmed = false;
   changes = [];
+  reviewedChangePaths.clear();
+  clearCommandOutput();
   activeDiffPath = null;
   restoreArmKey = null;
   selectedSkillIds.clear();
@@ -1007,6 +1053,7 @@ function renderChanges(): void {
   changeCount.textContent = String(changes.length);
   changeList.replaceChildren();
   if (changes.length === 0) {
+    changeSummary.textContent = "等待 Agent 修改";
     const empty = document.createElement("p");
     empty.className = "empty-copy";
     empty.textContent = "Agent 修改的文件会集中显示。";
@@ -1014,11 +1061,67 @@ function renderChanges(): void {
     renderRestoreActions();
     return;
   }
-  for (const change of changes) {
+
+  const entries = changes.map((change) => ({ change, evidence: changeEvidence(change) }));
+  const totalAdditions = entries.reduce((total, entry) => total + entry.evidence.additions, 0);
+  const totalDeletions = entries.reduce((total, entry) => total + entry.evidence.deletions, 0);
+  const reviewedCount = changes.filter((change) => reviewedChangePaths.has(change.relativePath)).length;
+  const estimated = entries.some((entry) => entry.evidence.estimated);
+  changeSummary.textContent = `${estimated ? "约 " : ""}+${totalAdditions} / -${totalDeletions} · 已审查 ${reviewedCount}/${changes.length}`;
+
+  for (const { change, evidence } of entries) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "change-file";
-    button.textContent = change.relativePath;
+    button.className = `change-file ${evidence.kind}${activeDiffPath === change.relativePath ? " selected" : ""}${reviewedChangePaths.has(change.relativePath) ? " reviewed" : ""}`;
+    button.title = `查看 ${change.relativePath} 的修改前后差异`;
+
+    const kind = document.createElement("span");
+    kind.className = `change-kind ${evidence.kind}`;
+    kind.textContent = evidence.kind === "added" ? "A" : "M";
+    kind.title = evidence.kind === "added" ? "新增文件" : "修改文件";
+
+    const visual = fileVisualFor(change.relativePath);
+    const icon = document.createElement("span");
+    icon.className = `file-icon ${visual.className}`;
+    icon.textContent = visual.label;
+    icon.setAttribute("aria-hidden", "true");
+
+    const path = document.createElement("span");
+    path.className = "change-path";
+    const segments = change.relativePath.split("/");
+    const name = document.createElement("strong");
+    name.textContent = segments.pop() ?? change.relativePath;
+    const directory = document.createElement("small");
+    directory.textContent = segments.length > 0 ? segments.join("/") : "项目根目录";
+    path.append(name, directory);
+
+    const meta = document.createElement("span");
+    meta.className = "change-meta";
+    const stats = document.createElement("span");
+    stats.className = "change-line-stats";
+    const additions = document.createElement("b");
+    additions.textContent = `+${evidence.additions}`;
+    const deletions = document.createElement("i");
+    deletions.textContent = `−${evidence.deletions}`;
+    stats.append(additions, deletions);
+    const review = document.createElement("span");
+    review.className = "change-review-mark";
+    review.textContent = reviewedChangePaths.has(change.relativePath) ? "✓" : "·";
+    review.title = reviewedChangePaths.has(change.relativePath) ? "已经打开审查" : "尚未审查";
+    meta.append(stats, review);
+
+    const heat = document.createElement("span");
+    heat.className = "change-heat";
+    const total = evidence.additions + evidence.deletions;
+    const additionBar = document.createElement("span");
+    additionBar.className = "change-heat-add";
+    additionBar.style.width = `${evidence.additions > 0 ? Math.max(8, (evidence.additions / total) * 100) : 0}%`;
+    const deletionBar = document.createElement("span");
+    deletionBar.className = "change-heat-delete";
+    deletionBar.style.width = `${evidence.deletions > 0 ? Math.max(8, (evidence.deletions / total) * 100) : 0}%`;
+    heat.append(additionBar, deletionBar);
+
+    button.append(kind, icon, path, meta, heat);
     button.addEventListener("click", () => showDiff(change));
     changeList.append(button);
   }
@@ -1033,6 +1136,7 @@ function showDiff(change: ChangedFileSnapshot): void {
   hideCodeSelectionToolbar();
   currentFile = null;
   activeDiffPath = change.relativePath;
+  reviewedChangePaths.add(change.relativePath);
   restoreArmKey = null;
   previewTitle.textContent = change.relativePath;
   previewMeta.textContent = change.originalContent === null ? "新文件 · 只读差异" : "修改前 / 修改后";
@@ -1047,6 +1151,7 @@ function showDiff(change: ChangedFileSnapshot): void {
   setPreviewCopyValues(change.relativePath, change.currentContent);
   selectedContext.textContent = `上下文：${change.relativePath}`;
   updateFileSelection();
+  renderChanges();
   renderRestoreActions();
   renderManualEditorActions();
 }
@@ -2060,6 +2165,8 @@ function handleAgentEvent(event: AgentEvent): void {
       activeToolTimelineItems.clear();
       liveOutcomeCard = null;
       changes = [];
+      reviewedChangePaths.clear();
+      clearCommandOutput();
       renderChanges();
       renderTokenUsage(null);
       setRunning(true);
@@ -2079,6 +2186,13 @@ function handleAgentEvent(event: AgentEvent): void {
       finishStreamingMessage(event.text);
       break;
     case "tool_started":
+      if (event.name === "run_command") {
+        beginCommandOutput(
+          event.id,
+          typeof event.arguments.command === "string" ? event.arguments.command : "本地命令",
+          typeof event.arguments.reason === "string" ? event.arguments.reason : "等待执行结果",
+        );
+      }
       activeToolTimelineItems.set(
         event.id,
         finishStreamingToolDecision(event.name, event.arguments) ??
@@ -2090,7 +2204,9 @@ function handleAgentEvent(event: AgentEvent): void {
       );
       break;
     case "tool_finished": {
-      handleToolOutput(event.name, event.result.content);
+      if (event.name === "run_command") {
+        finishCommandOutput(event.id, event.result.content, event.result.isError === true, event.durationMs);
+      }
       const toolItem = activeToolTimelineItems.get(event.id);
       if (toolItem) {
         updateTimelineItem(
@@ -2118,6 +2234,7 @@ function handleAgentEvent(event: AgentEvent): void {
       break;
     case "run_completed":
       finishPendingToolItems("任务已结束，但工具未返回完整结果。", "error");
+      finishPendingCommandOutputs("任务结束时没有收到完整命令结果。");
       if (lastAssistantMessage === event.summary.trim()) {
         appendTimeline("任务完成", `共执行 ${event.steps} 步，完整结果见上一条 Agent 消息。`, "success");
       } else {
@@ -2134,12 +2251,14 @@ function handleAgentEvent(event: AgentEvent): void {
     case "run_cancelled":
       finishInterruptedStream("模型响应已停止");
       finishPendingToolItems("任务停止时工具尚未返回结果。", "error");
+      finishPendingCommandOutputs("任务已停止，命令结果可能不完整。");
       appendTimeline("任务已停止", `共执行 ${event.steps} 步`, "error");
       setRunning(false);
       break;
     case "run_failed":
       finishInterruptedStream("模型响应未完成");
       finishPendingToolItems("任务异常结束，工具结果可能不完整。", "error");
+      finishPendingCommandOutputs("任务异常结束，命令结果不完整。");
       if (event.reason === "max_steps") {
         const item = appendTimeline("已达到步骤上限", event.message, "active");
         appendContinueRunAction(item);
@@ -2427,23 +2546,39 @@ function resetStreamingTimeline(): void {
   streamingTimelineItem = null;
 }
 
-function handleToolOutput(toolName: string, raw: string): void {
-  if (toolName !== "run_command") {
-    return;
+function beginCommandOutput(id: string, command: string, reason: string): void {
+  commandOutputEntries.push({ id, command, reason, state: "running", expanded: true });
+  while (commandOutputEntries.length > MAX_COMMAND_OUTPUT_ENTRIES) commandOutputEntries.shift();
+  renderCommandOutput();
+}
+
+function finishCommandOutput(id: string, raw: string, isError: boolean, durationMs: number): void {
+  let entry = commandOutputEntries.find((item) => item.id === id);
+  if (!entry) {
+    entry = { id, command: "本地命令", reason: "命令执行结果", state: "running", expanded: true };
+    commandOutputEntries.push(entry);
   }
-  let value: unknown = raw;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    // Keep non-JSON tool output readable.
+  const evidence = parseCommandEvidence(raw, entry.command, isError, durationMs);
+  entry.command = evidence.command || entry.command;
+  entry.evidence = evidence;
+  entry.state = evidence.state;
+  entry.expanded = evidence.state !== "success";
+  renderCommandOutput();
+}
+
+function finishPendingCommandOutputs(message: string): void {
+  for (const entry of commandOutputEntries.filter((item) => item.state === "running")) {
+    const evidence = parseCommandEvidence(
+      JSON.stringify({ command: entry.command, stderr: message }),
+      entry.command,
+      true,
+      0,
+    );
+    entry.evidence = evidence;
+    entry.state = "error";
+    entry.expanded = true;
   }
-  if (isRecord(value)) {
-    const command = typeof value.command === "string" ? `$ ${value.command}` : "";
-    const stdout = typeof value.stdout === "string" ? value.stdout : "";
-    const stderr = typeof value.stderr === "string" ? value.stderr : "";
-    const status = commandStatus(value);
-    appendOutput([command, stdout, stderr, status].filter(Boolean).join("\n"));
-  }
+  renderCommandOutput();
 }
 
 function appendTimeline(
@@ -2636,21 +2771,209 @@ function appendInline(parent: HTMLElement, tokens: InlineToken[]): void {
   }
 }
 
-function appendOutput(text: string): void {
-  if (!text) {
+function clearCommandOutput(): void {
+  commandOutputEntries.splice(0, commandOutputEntries.length);
+  renderCommandOutput();
+}
+
+function renderCommandOutput(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-output-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.outputFilter === outputFilter);
+  });
+
+  const completed = commandOutputEntries.filter((entry) => entry.state !== "running");
+  const failures = completed.filter((entry) => entry.state === "error" || entry.state === "rejected").length;
+  const running = commandOutputEntries.filter((entry) => entry.state === "running").length;
+  outputSummary.textContent = running > 0
+    ? `${running} 条执行中 · 共 ${commandOutputEntries.length} 条`
+    : commandOutputEntries.length > 0
+      ? `${commandOutputEntries.length} 条命令${failures > 0 ? ` · ${failures} 个问题` : " · 全部完成"}`
+      : "等待命令";
+
+  renderValidationProgress();
+  outputLog.replaceChildren();
+  const visible = commandOutputEntries.filter((entry) => {
+    if (outputFilter === "error") return entry.state === "error" || entry.state === "rejected";
+    if (outputFilter === "test") return Boolean(entry.evidence?.test) || looksLikeTestCommand(entry.command);
+    return true;
+  });
+
+  if (visible.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "output-empty";
+    const mark = document.createElement("span");
+    mark.className = "output-empty-mark";
+    mark.textContent = outputFilter === "all" ? ">_" : "◇";
+    const copy = document.createElement("p");
+    copy.textContent = commandOutputEntries.length === 0
+      ? "命令输出会按执行次数整理；文件工具仍在右侧过程区展示。"
+      : outputFilter === "error"
+        ? "当前没有失败或被拒绝的命令。"
+        : "当前没有识别到测试命令。";
+    empty.append(mark, copy);
+    outputLog.append(empty);
     return;
   }
-  if (
-    outputLog.textContent === "等待 Agent 运行命令或工具…" ||
-    outputLog.textContent === "命令输出会显示在这里；文件内容和工具摘要请在右侧过程区查看。"
-  ) {
-    outputLog.textContent = "";
+
+  for (const entry of visible) outputLog.append(commandOutputCard(entry));
+  if (outputAutoFollow) {
+    window.requestAnimationFrame(() => {
+      outputLog.scrollTop = outputLog.scrollHeight;
+    });
   }
-  const combined = `${outputLog.textContent ?? ""}${outputLog.textContent ? "\n\n" : ""}${text}`;
-  outputLog.textContent = combined.length > 100_000
-    ? `…较早输出已省略…\n\n${combined.slice(-96_000)}`
-    : combined;
-  outputLog.scrollTop = outputLog.scrollHeight;
+}
+
+function commandOutputCard(entry: CommandOutputEntry): HTMLElement {
+  const card = document.createElement("article");
+  card.className = `command-card ${entry.state}${entry.expanded ? " expanded" : ""}`;
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "command-card-toggle";
+  toggle.setAttribute("aria-expanded", String(entry.expanded));
+
+  const stateMark = document.createElement("span");
+  stateMark.className = "command-state-mark";
+  stateMark.textContent = entry.state === "running"
+    ? "·"
+    : entry.state === "success"
+      ? "✓"
+      : "!";
+
+  const copy = document.createElement("span");
+  copy.className = "command-card-copy";
+  const command = document.createElement("code");
+  command.textContent = entry.command;
+  const reason = document.createElement("small");
+  reason.textContent = entry.reason;
+  copy.append(command, reason);
+
+  const meta = document.createElement("span");
+  meta.className = "command-card-meta";
+  if (entry.evidence?.test) {
+    const test = document.createElement("span");
+    test.className = `command-test-chip${entry.evidence.test.failed > 0 ? " failed" : ""}`;
+    test.textContent = `${entry.evidence.test.passed}/${entry.evidence.test.total} 通过`;
+    meta.append(test);
+  }
+  const duration = document.createElement("span");
+  duration.textContent = entry.state === "running"
+    ? "执行中"
+    : entry.state === "rejected"
+      ? "未执行"
+      : formatDuration(entry.evidence?.executionDurationMs ?? 0);
+  const caret = document.createElement("span");
+  caret.className = "command-card-caret";
+  caret.textContent = "⌄";
+  meta.append(duration, caret);
+  toggle.append(stateMark, copy, meta);
+
+  const details = document.createElement("div");
+  details.className = "command-card-details";
+  details.hidden = !entry.expanded;
+  if (entry.state === "running") {
+    const pending = document.createElement("p");
+    pending.className = "command-pending-copy";
+    pending.textContent = "等待批准或执行结果…";
+    details.append(pending);
+  } else {
+    const evidence = entry.evidence;
+    if (evidence?.stdout) details.append(commandOutputBlock("标准输出", evidence.stdout, "stdout"));
+    if (evidence?.stderr) details.append(commandOutputBlock("错误输出", evidence.stderr, "stderr"));
+    if (!evidence?.stdout && !evidence?.stderr) {
+      const noOutput = document.createElement("p");
+      noOutput.className = "command-pending-copy";
+      noOutput.textContent = entry.state === "rejected" ? "用户拒绝了这条命令，没有产生运行输出。" : "命令没有产生文本输出。";
+      details.append(noOutput);
+    }
+    if (evidence) {
+      const footer = document.createElement("footer");
+      footer.className = "command-card-footer";
+      footer.append(
+        commandFact(evidence.timedOut ? "执行超时" : evidence.exitCode === undefined ? "无退出码" : `退出码 ${evidence.exitCode}`),
+        commandFact(`执行 ${formatDuration(evidence.executionDurationMs)}`),
+      );
+      if (evidence.approvalDurationMs >= 500) footer.append(commandFact(`等待批准 ${formatDuration(evidence.approvalDurationMs)}`));
+      if (evidence.outputTruncated) footer.append(commandFact("输出已截断"));
+      details.append(footer);
+    }
+  }
+
+  toggle.addEventListener("click", () => {
+    entry.expanded = !entry.expanded;
+    details.hidden = !entry.expanded;
+    card.classList.toggle("expanded", entry.expanded);
+    toggle.setAttribute("aria-expanded", String(entry.expanded));
+  });
+  card.append(toggle, details);
+  return card;
+}
+
+function commandOutputBlock(label: string, value: string, tone: "stdout" | "stderr"): HTMLElement {
+  const block = document.createElement("section");
+  block.className = `command-output-block ${tone}`;
+  const heading = document.createElement("span");
+  heading.textContent = label;
+  const content = document.createElement("pre");
+  content.textContent = value;
+  block.append(heading, content);
+  return block;
+}
+
+function commandFact(value: string): HTMLElement {
+  const fact = document.createElement("span");
+  fact.textContent = value;
+  return fact;
+}
+
+function renderValidationProgress(): void {
+  const tests = commandOutputEntries
+    .map((entry) => entry.evidence?.test)
+    .filter((test): test is TestEvidence => Boolean(test));
+  validationProgress.replaceChildren();
+  validationProgress.hidden = tests.length === 0;
+  if (tests.length === 0) return;
+
+  const first = tests[0]!;
+  const latest = tests.at(-1)!;
+  const header = document.createElement("header");
+  const label = document.createElement("span");
+  label.textContent = "验证进展";
+  const strong = document.createElement("strong");
+  strong.textContent = tests.length > 1
+    ? `${first.passed}/${first.total} → ${latest.passed}/${latest.total} 通过`
+    : `${latest.passed}/${latest.total} 项通过`;
+  const status = document.createElement("span");
+  status.className = `validation-status${latest.failed === 0 && latest.total > 0 ? " success" : ""}`;
+  status.textContent = latest.failed === 0 && latest.total > 0 ? "验证通过" : `${latest.failed} 项失败`;
+  header.append(label, strong, status);
+
+  const rows = document.createElement("div");
+  rows.className = "validation-rows";
+  if (tests.length > 1) rows.append(validationRow("首次", first));
+  rows.append(validationRow(tests.length > 1 ? "最终" : "当前", latest));
+  validationProgress.append(header, rows);
+}
+
+function validationRow(label: string, test: TestEvidence): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "validation-row";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const track = document.createElement("span");
+  track.className = "validation-track";
+  const fill = document.createElement("span");
+  fill.className = `validation-fill${test.failed === 0 && test.total > 0 ? " success" : ""}`;
+  fill.style.width = `${testEvidenceProgress(test)}%`;
+  track.append(fill);
+  const value = document.createElement("span");
+  value.textContent = `${test.passed}/${test.total}`;
+  row.append(name, track, value);
+  return row;
+}
+
+function looksLikeTestCommand(command: string): boolean {
+  return /(?:^|\s)(?:pnpm\s+test|npm\s+(?:run\s+)?test|yarn\s+test|bun\s+test|vitest|jest|pytest|cargo\s+test|go\s+test|dotnet\s+test|mvn\s+test|gradle\s+test)(?:\s|$)/i.test(command);
 }
 
 function setRunning(isRunning: boolean, failed = false): void {
@@ -2975,21 +3298,6 @@ function numericDuration(value: unknown): number | null {
 
 function formatDuration(durationMs: number): string {
   return durationMs < 1_000 ? `${Math.round(durationMs)} ms` : `${(durationMs / 1_000).toFixed(1)} s`;
-}
-
-function commandStatus(value: Record<string, unknown>): string {
-  const parts: string[] = [];
-  if (value.approved === false) {
-    parts.push("[命令未执行：用户已拒绝]");
-  } else if (value.timedOut === true) {
-    parts.push("[命令超时，进程树已终止]");
-  } else if (typeof value.exitCode === "number") {
-    parts.push(`[退出码 ${value.exitCode}]`);
-  }
-  if (value.outputTruncated === true) {
-    parts.push("[输出过长，仅保留末尾内容]");
-  }
-  return parts.join(" ");
 }
 
 function notify(message: string): void {
