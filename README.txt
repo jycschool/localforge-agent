@@ -1,8 +1,8 @@
-项目名称：LocalForge
+项目名称：RepoForge（代码锻造智能体）
 
 Git 仓库：https://github.com/jycschool/localforge-agent
 
-LocalForge 是一个独立运行、Codex 风格的本地编程智能体桌面应用，不依赖 VS Code，也不封装现有 coding agent 或 agent 框架。Electron 只负责桌面窗口；模型消息循环、原生 tool calling 调度、文件工具、本地命令、停止条件、错误处理和变更跟踪均自行实现。
+RepoForge，中文名“代码锻造”，是一个独立运行、Codex 风格的项目编程智能体桌面应用，不依赖 VS Code，也不封装现有 coding agent 或 agent 框架。Electron 只负责桌面窗口；模型消息循环、原生 tool calling 调度、文件工具、本地命令、停止条件、错误处理和变更跟踪均自行实现。
 
 运行方法：安装 Node.js 22.12 或更高版本和 pnpm，在仓库目录执行 pnpm install、pnpm run check、pnpm test、pnpm start。首次构建后可运行 scripts/create-desktop-shortcut.ps1 创建桌面快捷方式，此后无需 pnpm start；源码更新后先执行 pnpm run build。启动后打开本地项目，在设置中保存 OpenAI-compatible 模型配置和对应 API Key，即可从顶栏安全切换并提交任务。
 

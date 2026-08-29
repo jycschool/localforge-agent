@@ -1,8 +1,8 @@
-# LocalForge
+# RepoForge · 代码锻造智能体
 
 [![Windows 质量门禁](https://github.com/jycschool/localforge-agent/actions/workflows/windows-quality-gate.yml/badge.svg)](https://github.com/jycschool/localforge-agent/actions/workflows/windows-quality-gate.yml)
 
-LocalForge 是一个独立运行的本地编程智能体桌面应用。它采用 Codex 风格的工作台：左侧显示项目结构与变更文件，中间提供代码预览、轻量手动编辑和任务前后差异，右侧以连续可滚动会话展示用户问题、Agent 流式回复、工具时间线和命令审批。
+RepoForge，中文名“代码锻造”，是一个独立运行的项目编程智能体桌面应用。它采用 Codex 风格的工作台：左侧显示项目结构与变更文件，中间提供代码预览、轻量手动编辑和任务前后差异，右侧以连续可滚动会话展示用户问题、Agent 流式回复、工具时间线和命令审批。
 
 公开仓库：https://github.com/jycschool/localforge-agent
 
@@ -50,7 +50,7 @@ pnpm start
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1
 ```
 
-此后双击桌面的 `LocalForge` 即可直接启动现有 `dist` 构建，不会弹出命令行窗口。源码变化后先运行一次 `pnpm run build`；如果移动项目目录或重新安装依赖，应重新创建快捷方式。该方式依赖本机项目目录与 `node_modules`，不是可分发安装包。
+此后双击桌面的 `RepoForge 代码锻造` 即可直接启动现有 `dist` 构建，不会弹出命令行窗口。源码变化后先运行一次 `pnpm run build`；如果移动项目目录或重新安装依赖，应重新创建快捷方式。该方式依赖本机项目目录与 `node_modules`，不是可分发安装包。
 
 开发冻结前可运行 `pnpm run verify` 完成类型检查、127 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
@@ -64,13 +64,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-short
 pnpm run package:win
 ```
 
-输出位于 `release\LocalForge-win32-x64\LocalForge.exe`。这是免安装应用目录，尚未购买 Windows 代码签名证书，因此首次从网络下载时可能出现系统信誉提示；Git 提交的 SSH 签名不能替代可执行文件代码签名。
+输出位于 `release\RepoForge-win32-x64\RepoForge.exe`。这是免安装应用目录，尚未购买 Windows 代码签名证书，因此首次从网络下载时可能出现系统信誉提示；Git 提交的 SSH 签名不能替代可执行文件代码签名。
 
 录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
 
 启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址和 Model-Id。设置同时提供只读/工作区读写权限与快速/标准/深入响应档位；Agent 标题旁显示本次任务累计 Token，接口未返回 usage 时以 `≈` 标明本地估算。右侧的 `Skill` 可新建、编辑、删除和选择项目工作方式；`Memory` 可维护不进入仓库的长期上下文；“附件”会把明确选择的项目文本文件发送给当前模型服务。连续输入会自动保留同一会话上下文；点击“新会话”可从空白上下文开始，旧记录可从“历史”中切换、继续或整段删除。也可以先执行 `pnpm run build`，只生成桌面程序的开发构建。
 
-ModelScope 免费 API 的账号绑定条件和调用额度可能调整，请以控制台当日提示为准。Token 只保存在操作系统安全存储中；切换 API 服务时，LocalForge 不会把原服务的 Key 发送到新地址。
+ModelScope 免费 API 的账号绑定条件和调用额度可能调整，请以控制台当日提示为准。Token 只保存在操作系统安全存储中；切换 API 服务时，RepoForge 不会把原服务的 Key 发送到新地址。
 
 ## 项目结构
 

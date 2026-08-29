@@ -39,7 +39,7 @@ let outputPaths;
 try {
   outputPaths = await packager({
     dir: stagingRoot,
-    name: "LocalForge",
+    name: "RepoForge",
     platform: "win32",
     arch: "x64",
     electronVersion: electronPackage.version,
@@ -47,6 +47,7 @@ try {
     overwrite: true,
     prune: false,
     asar: true,
+    icon: resolve(workspaceRoot, "media", "repoforge-icon.ico"),
   });
 } finally {
   await rm(stagingRoot, { recursive: true, force: true });
@@ -56,7 +57,7 @@ if (outputPaths.length !== 1) {
   throw new Error(`预期生成 1 个 Windows 应用目录，实际生成 ${outputPaths.length} 个。`);
 }
 
-const executablePath = resolve(outputPaths[0], "LocalForge.exe");
+const executablePath = resolve(outputPaths[0], "RepoForge.exe");
 const applicationArchivePath = resolve(outputPaths[0], "resources", "app.asar");
 await Promise.all([access(executablePath), access(applicationArchivePath)]);
 

@@ -42,6 +42,8 @@ async function copyStaticAssets() {
   await Promise.all([
     copyFile("src/renderer/index.html", "dist/index.html"),
     copyFile("src/renderer/styles.css", "dist/styles.css"),
+    copyFile("media/repoforge-icon.svg", "dist/app-icon.svg"),
+    copyFile("media/repoforge-icon.png", "dist/app-icon.png"),
   ]);
 }
 

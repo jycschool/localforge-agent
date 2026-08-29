@@ -6,9 +6,9 @@ describe("model diagnostics", () => {
   it("checks text, streaming, usage, and tool calling", async () => {
     const complete = vi.fn<ModelClient["complete"]>();
     complete.mockImplementationOnce(async (_messages, _tools, _signal, onDelta, onUsage) => {
-      onDelta?.("LocalForge OK");
+      onDelta?.("RepoForge OK");
       onUsage?.({ promptTokens: 10, completionTokens: 3, totalTokens: 13, estimated: false });
-      return { role: "assistant", content: "LocalForge OK" };
+      return { role: "assistant", content: "RepoForge OK" };
     });
     complete.mockResolvedValueOnce({
       role: "assistant",

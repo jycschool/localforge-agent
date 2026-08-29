@@ -59,8 +59,8 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: LocalForge-Windows-x64-${{ github.sha }}
-          path: release/LocalForge-win32-x64
+          name: RepoForge-Windows-x64-${{ github.sha }}
+          path: release/RepoForge-win32-x64
           if-no-files-found: error
           retention-days: 14
 
@@ -78,15 +78,15 @@ jobs:
       - name: 下载已验证应用
         uses: actions/download-artifact@v5
         with:
-          name: LocalForge-Windows-x64-${{ github.sha }}
+          name: RepoForge-Windows-x64-${{ github.sha }}
           path: release-assets
 
       - name: 生成发布压缩包
         shell: pwsh
-        run: Compress-Archive -Path "release-assets\*" -DestinationPath "LocalForge-Windows-x64.zip" -CompressionLevel Optimal
+        run: Compress-Archive -Path "release-assets\*" -DestinationPath "RepoForge-Windows-x64.zip" -CompressionLevel Optimal
 
       - name: 创建 GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME "LocalForge-Windows-x64.zip#Windows x64 免安装版" --verify-tag --generate-notes --title "LocalForge $env:GITHUB_REF_NAME"
+        run: gh release create $env:GITHUB_REF_NAME "RepoForge-Windows-x64.zip#Windows x64 免安装版" --verify-tag --generate-notes --title "RepoForge 代码锻造智能体 $env:GITHUB_REF_NAME"

@@ -37,7 +37,7 @@ export async function diagnoseModel(
     const response = await client.complete(
       [
         { role: "system", content: "You are a model connectivity probe." },
-        { role: "user", content: "Reply with exactly: LocalForge OK" },
+        { role: "user", content: "Reply with exactly: RepoForge OK" },
       ],
       [],
       signal,

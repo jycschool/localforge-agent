@@ -65,7 +65,8 @@ function createWindow(): void {
     minWidth: 1080,
     minHeight: 680,
     backgroundColor: "#0b0d10",
-    title: "LocalForge",
+    title: "RepoForge · 代码锻造智能体",
+    icon: path.join(__dirname, "app-icon.png"),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -277,12 +278,12 @@ export function registerIpc(
     const selection = mainWindow
       ? await dialog.showSaveDialog(mainWindow, {
           title: "导出项目 Memory",
-          defaultPath: path.join(rootPath, "localforge-memory.md"),
+          defaultPath: path.join(rootPath, "repoforge-memory.md"),
           filters: [{ name: "Markdown", extensions: ["md"] }],
         })
       : await dialog.showSaveDialog({
           title: "导出项目 Memory",
-          defaultPath: path.join(rootPath, "localforge-memory.md"),
+          defaultPath: path.join(rootPath, "repoforge-memory.md"),
           filters: [{ name: "Markdown", extensions: ["md"] }],
         });
     if (selection.canceled || !selection.filePath) {
@@ -375,12 +376,12 @@ export function registerIpc(
     const selection = mainWindow
       ? await dialog.showSaveDialog(mainWindow, {
           title: "导出任务证据报告",
-          defaultPath: path.join(rootPath, `localforge-report-${id.slice(0, 8)}.md`),
+          defaultPath: path.join(rootPath, `repoforge-report-${id.slice(0, 8)}.md`),
           filters: [{ name: "Markdown", extensions: ["md"] }],
         })
       : await dialog.showSaveDialog({
           title: "导出任务证据报告",
-          defaultPath: path.join(rootPath, `localforge-report-${id.slice(0, 8)}.md`),
+          defaultPath: path.join(rootPath, `repoforge-report-${id.slice(0, 8)}.md`),
           filters: [{ name: "Markdown", extensions: ["md"] }],
         });
     if (selection.canceled || !selection.filePath) {

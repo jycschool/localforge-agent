@@ -1,6 +1,6 @@
-# LocalForge quality gate
+# RepoForge quality gate
 
-Use this skill when changing LocalForge behavior or its desktop interface.
+Use this skill when changing RepoForge behavior or its desktop interface.
 
 - Inspect the relevant contract, main-process handler, preload bridge, and Renderer call together when an IPC feature changes.
 - Keep the Renderer sandboxed and never expose API keys or arbitrary IPC channels.

@@ -38,7 +38,7 @@ describe("run evidence report", () => {
       messages: [{ role: "assistant", content: "done", reasoning_content: "private" }],
     });
 
-    expect(report).toContain("# LocalForge 任务证据报告");
+    expect(report).toContain("# RepoForge 代码锻造智能体任务证据报告");
     expect(report).toContain("qwen-test");
     expect(report).toContain("25 Token");
     expect(report).toContain("src/login.ts");

@@ -42,7 +42,7 @@ describe("task context", () => {
     expect(count(result, "\uE003")).toBe(0);
     expect(result).toContain("Attached file: c.txt");
     expect(result).not.toContain("Attached file: d.txt");
-    expect(result.match(/Attachment truncated by LocalForge/g)).toHaveLength(3);
+    expect(result.match(/Attachment truncated by RepoForge/g)).toHaveLength(3);
   });
 
   it("stores the visible task instead of copying attachment bodies into history", () => {

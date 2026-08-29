@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">RepoForge 代码锻造智能体应用图标</title>
+  <desc id="desc">深色圆角方形中，一组代码括号包围着代表可验证修改的勾选标记。</desc>
+  <defs>
+    <linearGradient id="background" x1="72" y1="48" x2="438" y2="470" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#252C4B"/>
+      <stop offset="0.52" stop-color="#151A2D"/>
+      <stop offset="1" stop-color="#0D101A"/>
+    </linearGradient>
+    <linearGradient id="brackets" x1="128" y1="150" x2="384" y2="362" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CBD4FF"/>
+      <stop offset="1" stop-color="#879BFF"/>
+    </linearGradient>
+    <linearGradient id="check" x1="211" y1="300" x2="318" y2="211" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#86E6FF"/>
+      <stop offset="1" stop-color="#B9A7FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="476" height="476" rx="112" fill="url(#background)"/>
+  <rect x="19" y="19" width="474" height="474" rx="111" fill="none" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="2"/>
+  <path d="M190 145 126 256l64 111M322 145l64 111-64 111" fill="none" stroke="#6D7DE0" stroke-opacity="0.28" stroke-width="52" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+  <path d="M190 145 126 256l64 111M322 145l64 111-64 111" fill="none" stroke="url(#brackets)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m211 264 39 40 68-94" fill="none" stroke="#5678C8" stroke-opacity="0.35" stroke-width="42" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+  <path d="m211 264 39 40 68-94" fill="none" stroke="url(#check)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

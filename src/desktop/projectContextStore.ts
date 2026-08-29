@@ -188,7 +188,7 @@ export class ProjectContextStore {
       if (isMissingFile(error)) {
         return { memory: "", updatedAt: null };
       }
-      throw new Error("项目记忆无法读取，请检查 LocalForge 的本地数据。", { cause: error });
+      throw new Error("项目记忆无法读取，请检查 RepoForge 的本地数据。", { cause: error });
     }
   }
 
@@ -221,7 +221,7 @@ export class ProjectContextStore {
       await unlink(filePath);
     } catch (error) {
       if (!isMissingFile(error)) {
-        throw new Error("项目记忆无法删除，请检查 LocalForge 的本地数据。", { cause: error });
+        throw new Error("项目记忆无法删除，请检查 RepoForge 的本地数据。", { cause: error });
       }
     }
     return this.getContext(resolvedRoot);

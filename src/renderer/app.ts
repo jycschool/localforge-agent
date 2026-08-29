@@ -69,6 +69,7 @@ interface PlanDraftItem {
 }
 
 const api = window.localForge;
+const AGENT_DISPLAY_NAME = "RepoForge";
 let project: ProjectSnapshot | null = null;
 let selectedFile: string | null = null;
 let changes: ChangedFileSnapshot[] = [];
@@ -2083,7 +2084,7 @@ function renderStreamingText(): void {
     streamingTimelineItem,
     "assistant",
     streamingAssistantText,
-    "LocalForge",
+    AGENT_DISPLAY_NAME,
     `第 ${streamingStep} 步 · 正在生成`,
     true,
   );
@@ -2092,9 +2093,9 @@ function renderStreamingText(): void {
 function finishStreamingMessage(text: string): void {
   cancelStreamingFrame();
   if (streamingTimelineItem) {
-    updateConversationItem(streamingTimelineItem, "assistant", text, "LocalForge");
+    updateConversationItem(streamingTimelineItem, "assistant", text, AGENT_DISPLAY_NAME);
   } else {
-    appendConversationMessage("assistant", text, "LocalForge");
+    appendConversationMessage("assistant", text, AGENT_DISPLAY_NAME);
   }
   resetStreamingTimeline();
 }
@@ -2113,7 +2114,7 @@ function finishStreamingToolDecision(
       item,
       "assistant",
       streamingAssistantText,
-      "LocalForge",
+      AGENT_DISPLAY_NAME,
     );
     resetStreamingTimeline();
     return null;
@@ -2139,7 +2140,7 @@ function finishInterruptedStream(label: string): void {
       streamingTimelineItem,
       "assistant",
       streamingAssistantText,
-      "LocalForge",
+      AGENT_DISPLAY_NAME,
       label,
       false,
       true,
@@ -2849,13 +2850,13 @@ function appendHistoryRunToTimeline(detail: RunHistoryDetail): void {
     .map((message) => message.content?.trim() ?? "")
     .filter((text, index, values) => text && text !== values[index - 1]);
   for (const message of assistantMessages) {
-    appendConversationMessage("assistant", message, "LocalForge");
+    appendConversationMessage("assistant", message, AGENT_DISPLAY_NAME);
   }
 
   if (detail.status === "completed") {
     const summary = detail.summary.trim();
     if (summary && assistantMessages.at(-1) !== summary) {
-      appendConversationMessage("assistant", summary, "LocalForge");
+      appendConversationMessage("assistant", summary, AGENT_DISPLAY_NAME);
     }
   } else {
     appendTimeline(

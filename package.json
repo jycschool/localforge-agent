@@ -1,7 +1,7 @@
 {
   "name": "localforge-agent",
-  "displayName": "LocalForge",
-  "description": "A standalone, transparent and local-first coding agent desktop app.",
+  "displayName": "RepoForge 代码锻造智能体",
+  "description": "A standalone and transparent coding agent desktop app with reviewable plans, tools and changes.",
   "version": "0.1.0",
   "private": true,
   "publisher": "localforge",

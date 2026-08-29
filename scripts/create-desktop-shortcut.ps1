@@ -9,6 +9,7 @@ Set-StrictMode -Version Latest
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $electronPath = Join-Path $projectRoot "node_modules\electron\dist\electron.exe"
 $entryPath = Join-Path $projectRoot "dist\main.js"
+$iconPath = Join-Path $projectRoot "media\repoforge-icon.ico"
 
 if (-not (Test-Path -LiteralPath $electronPath -PathType Leaf)) {
   throw "Electron is not installed. Run pnpm install first."
@@ -16,9 +17,12 @@ if (-not (Test-Path -LiteralPath $electronPath -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $entryPath -PathType Leaf)) {
   throw "The desktop build is missing. Run pnpm run build first."
 }
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
+  throw "The RepoForge application icon is missing."
+}
 
 if ([string]::IsNullOrWhiteSpace($ShortcutPath)) {
-  $ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "LocalForge.lnk"
+  $ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "RepoForge 代码锻造.lnk"
 }
 $ShortcutPath = [IO.Path]::GetFullPath($ShortcutPath)
 if ([IO.Path]::GetExtension($ShortcutPath) -ne ".lnk") {
@@ -36,8 +40,8 @@ try {
   $shortcut.TargetPath = $electronPath
   $shortcut.Arguments = '"' + $projectRoot + '"'
   $shortcut.WorkingDirectory = $projectRoot
-  $shortcut.IconLocation = "$electronPath,0"
-  $shortcut.Description = "Launch the LocalForge desktop agent"
+  $shortcut.IconLocation = "$iconPath,0"
+  $shortcut.Description = "启动 RepoForge 代码锻造智能体"
   $shortcut.Save()
 } finally {
   if ($null -ne $shortcut) {
@@ -46,5 +50,5 @@ try {
   [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
 }
 
-Write-Output "Created LocalForge shortcut: $ShortcutPath"
+Write-Output "Created RepoForge shortcut: $ShortcutPath"
 Write-Output "The shortcut launches the existing dist build directly without pnpm start."

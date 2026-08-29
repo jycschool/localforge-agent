@@ -31,7 +31,7 @@ export function formatRunReport(projectName: string, run: RunHistoryDetail): str
     : "- 本任务未使用结构化计划";
 
   return [
-    `# LocalForge 任务证据报告`,
+    `# RepoForge 代码锻造智能体任务证据报告`,
     "",
     `- 项目：${escapeText(projectName)}`,
     `- 任务 ID：\`${run.id}\``,
@@ -79,7 +79,7 @@ export function formatRunReport(projectName: string, run: RunHistoryDetail): str
     "",
     evidence,
     "",
-    `> 本报告由 LocalForge 于 ${new Date().toISOString()} 从本地任务历史生成。报告不包含模型隐藏思考过程。`,
+    `> 本报告由 RepoForge 于 ${new Date().toISOString()} 从本地任务历史生成。报告不包含模型隐藏思考过程。`,
     "",
   ].join("\n");
 }
