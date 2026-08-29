@@ -74,6 +74,19 @@ describe("run history store", () => {
         },
       ],
       changedFiles: ["src/main.ts", "src/main.ts"],
+      outcome: {
+        changedFileCount: 1,
+        additions: 4,
+        deletions: 1,
+        lineStatsEstimated: false,
+        toolCalls: 2,
+        commandCalls: 1,
+        successfulToolCalls: 2,
+        failedToolCalls: 0,
+        toolDurationMs: 120,
+        testCount: 6,
+        tokenUsage: { promptTokens: 20, completionTokens: 5, totalTokens: 25, estimated: false },
+      },
       plan: {
         revision: 1,
         state: "completed",
@@ -92,6 +105,7 @@ describe("run history store", () => {
       eventCount: 2,
       changedFiles: ["src/main.ts"],
       executionMode: "plan",
+      outcome: { changedFileCount: 1, testCount: 6, toolCalls: 2 },
       plan: {
         state: "completed",
         verification: ["测试通过"],

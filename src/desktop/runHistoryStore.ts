@@ -4,6 +4,7 @@ import path from "node:path";
 import type { AgentEvent, ChatMessage, PlanSnapshot } from "../core/protocol";
 import type {
   RunHistoryDetail,
+  RunOutcomeMetrics,
   RunHistoryStatus,
   RunHistorySummary,
 } from "./contracts";
@@ -47,6 +48,7 @@ export interface FinishRunHistoryInput {
   events: readonly AgentEvent[];
   messages: readonly ChatMessage[];
   changedFiles: readonly string[];
+  outcome?: RunOutcomeMetrics;
   plan?: PlanSnapshot;
 }
 
@@ -124,6 +126,7 @@ export class RunHistoryStore {
       steps: Math.max(0, Math.trunc(input.steps)),
       eventCount: events.length,
       changedFiles: Array.from(new Set(input.changedFiles)).slice(0, 200),
+      outcome: input.outcome ? sanitizeOutcome(input.outcome) : undefined,
       updatedAt,
     };
     const detail: RunHistoryDetail = {
@@ -362,6 +365,30 @@ function sanitizePlan(plan: PlanSnapshot): PlanSnapshot {
     })),
     verification: plan.verification.slice(0, 12).map((item) => item.slice(0, 300)),
     remaining: plan.remaining.slice(0, 12).map((item) => item.slice(0, 300)),
+  };
+}
+
+function sanitizeOutcome(outcome: RunOutcomeMetrics): RunOutcomeMetrics {
+  const whole = (value: number): number => Math.max(0, Math.trunc(Number.isFinite(value) ? value : 0));
+  return {
+    changedFileCount: whole(outcome.changedFileCount),
+    additions: whole(outcome.additions),
+    deletions: whole(outcome.deletions),
+    lineStatsEstimated: outcome.lineStatsEstimated === true,
+    toolCalls: whole(outcome.toolCalls),
+    commandCalls: whole(outcome.commandCalls),
+    successfulToolCalls: whole(outcome.successfulToolCalls),
+    failedToolCalls: whole(outcome.failedToolCalls),
+    toolDurationMs: whole(outcome.toolDurationMs),
+    testCount: outcome.testCount === undefined ? undefined : whole(outcome.testCount),
+    tokenUsage: outcome.tokenUsage
+      ? {
+          promptTokens: whole(outcome.tokenUsage.promptTokens),
+          completionTokens: whole(outcome.tokenUsage.completionTokens),
+          totalTokens: whole(outcome.tokenUsage.totalTokens),
+          estimated: outcome.tokenUsage.estimated === true,
+        }
+      : undefined,
   };
 }
 

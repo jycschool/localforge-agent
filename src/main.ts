@@ -40,6 +40,7 @@ import {
 import { ProjectContextStore } from "./desktop/projectContextStore";
 import { buildRunContextPreview } from "./desktop/runContextPreview";
 import { RunHistoryStore } from "./desktop/runHistoryStore";
+import { summarizeRunOutcome } from "./desktop/runOutcome";
 import { formatRunReport } from "./desktop/runReport";
 import { WorkspaceStateStore } from "./desktop/workspaceStateStore";
 import { OpenAICompatibleClient } from "./model/openAICompatibleClient";
@@ -538,6 +539,7 @@ export function registerIpc(
           events: runEvents,
           messages: messagesForRunHistory(result.messages, previousMessages.length, task),
           changedFiles: changes.map((change) => change.relativePath),
+          outcome: summarizeRunOutcome(runEvents, changes),
           plan: planController?.snapshot(),
         });
         mainWindow?.webContents.send(IPC_CHANNELS.changesUpdated, changes);
@@ -557,6 +559,7 @@ export function registerIpc(
               events: runEvents,
               messages: [],
               changedFiles: changes.map((change) => change.relativePath),
+              outcome: summarizeRunOutcome(runEvents, changes),
               plan: planController?.snapshot(),
             });
           } catch (historyError) {

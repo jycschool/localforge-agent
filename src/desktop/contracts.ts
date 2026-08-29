@@ -6,6 +6,7 @@ import type {
   PlanApprovalDecision,
   PlanApprovalRequest,
   PlanSnapshot,
+  TokenUsage,
 } from "../core/protocol";
 
 export const MAX_TASK_CHARS = 20_000;
@@ -181,6 +182,7 @@ export interface RunHistorySummary {
   continuedFromRunId?: string;
   eventCount: number;
   changedFiles: string[];
+  outcome?: RunOutcomeMetrics;
   createdAt: string;
   updatedAt: string;
 }
@@ -200,6 +202,20 @@ export interface ChangedFileSnapshot {
   originalContent: string | null;
   currentContent: string;
   currentHash: string;
+}
+
+export interface RunOutcomeMetrics {
+  changedFileCount: number;
+  additions: number;
+  deletions: number;
+  lineStatsEstimated: boolean;
+  toolCalls: number;
+  commandCalls: number;
+  successfulToolCalls: number;
+  failedToolCalls: number;
+  toolDurationMs: number;
+  testCount?: number;
+  tokenUsage?: TokenUsage;
 }
 
 export interface RestoreChangedFilesRequest {

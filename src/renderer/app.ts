@@ -18,10 +18,18 @@ import {
   type ProjectSnapshot,
   type PublicSettings,
   type RunHistoryDetail,
+  type RunOutcomeMetrics,
   type RunHistoryStatus,
   type RunHistorySummary,
   type RunRequest,
 } from "../desktop/contracts";
+import { replayFrameDelay, summarizeRunOutcome } from "../desktop/runOutcome";
+import {
+  buildCodeSelectionTask,
+  normalizeCodeSelection,
+  type CodeSelectionAction,
+  type NormalizedCodeSelection,
+} from "./features/codeSelection";
 import {
   detectLineEnding,
   editorByteLength,
@@ -124,6 +132,11 @@ let manualCancelArmed = false;
 let restoreArmKey: string | null = null;
 let quickOpenMatches: QuickOpenMatch[] = [];
 let quickOpenSelectionIndex = 0;
+let activeCodeSelection: NormalizedCodeSelection | null = null;
+let activeRunEvents: AgentEvent[] = [];
+let liveOutcomeCard: HTMLElement | null = null;
+let historyReplayTimer: number | undefined;
+let historyReplayRunning = false;
 const expandedDirectories = new Set<string>();
 const activeToolTimelineItems = new Map<string, HTMLElement>();
 const MAX_TIMELINE_ITEMS = 500;
@@ -274,6 +287,8 @@ const projectPanel = document.querySelector<HTMLElement>(".project-panel");
 const previewPanel = document.querySelector<HTMLElement>(".preview-panel");
 const projectRowResizer = element<HTMLElement>("project-row-resizer");
 const previewRowResizer = element<HTMLElement>("preview-row-resizer");
+const codeSelectionToolbar = element<HTMLElement>("code-selection-toolbar");
+const codeSelectionLabel = element<HTMLElement>("code-selection-label");
 
 if (!projectPanel || !previewPanel) {
   throw new Error("找不到可调整高度的主面板。");
@@ -337,6 +352,12 @@ modelNameInput.addEventListener("input", syncModelPreset);
 useModelScopePresetButton.addEventListener("click", useModelScopePreset);
 openModelScopeTokenButton.addEventListener("click", () => void api.openModelScopeTokenPage());
 exportRunReportButton.addEventListener("click", () => void exportSelectedRunReport());
+codeSelectionToolbar.querySelectorAll<HTMLButtonElement>("[data-selection-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.selectionAction as CodeSelectionAction | undefined;
+    if (action) applyCodeSelectionAction(action);
+  });
+});
 approveCommandButton.addEventListener("click", (event) => void answerApproval(event, true));
 rejectCommandButton.addEventListener("click", (event) => void answerApproval(event, false));
 addPlanStepButton.addEventListener("click", addPlanStep);
@@ -356,6 +377,19 @@ newFileDialog.addEventListener("cancel", (event) => {
   closeNewFileDialog();
 });
 document.addEventListener("keydown", handleGlobalShortcut);
+previewContent.addEventListener("mouseup", (event) => captureCodeSelection(event));
+previewContent.addEventListener("keyup", () => captureCodeSelection());
+document.addEventListener("mousedown", (event) => {
+  const target = event.target;
+  if (
+    target instanceof Node &&
+    !codeSelectionToolbar.contains(target) &&
+    !previewContent.contains(target)
+  ) {
+    hideCodeSelectionToolbar();
+  }
+});
+historyDialog.addEventListener("close", () => stopHistoryReplay());
 window.addEventListener("beforeunload", (event) => {
   persistDraftNow();
   if (manualEditor && isEditorDirty(manualEditor.textarea.value, manualEditor.originalNormalized)) {
@@ -381,6 +415,7 @@ api.onChangesUpdated((nextChanges) => {
   changes = nextChanges;
   restoreArmKey = null;
   renderChanges();
+  refreshLiveOutcomeCard();
   void refreshProject(false);
   void loadRunHistory();
 });
@@ -770,6 +805,7 @@ async function openFile(relativePath: string): Promise<void> {
 }
 
 function showFileSnapshot(file: FileSnapshot): void {
+  hideCodeSelectionToolbar();
   currentFile = file;
   selectedFile = file.relativePath;
   activeDiffPath = null;
@@ -810,6 +846,7 @@ function beginManualEdit(): void {
     lineNumbers,
   };
   manualCancelArmed = false;
+  hideCodeSelectionToolbar();
   textarea.addEventListener("input", updateManualEditorState);
   textarea.addEventListener("scroll", () => {
     lineNumbers.scrollTop = textarea.scrollTop;
@@ -993,6 +1030,7 @@ function showDiff(change: ChangedFileSnapshot): void {
     return;
   }
   selectedFile = change.relativePath;
+  hideCodeSelectionToolbar();
   currentFile = null;
   activeDiffPath = change.relativePath;
   restoreArmKey = null;
@@ -1111,6 +1149,7 @@ function diffColumn(label: string, content: string): HTMLElement {
 }
 
 function showProjectWelcome(): void {
+  hideCodeSelectionToolbar();
   currentFile = null;
   activeDiffPath = null;
   restoreArmKey = null;
@@ -1119,12 +1158,13 @@ function showProjectWelcome(): void {
   previewMode.textContent = "PROJECT";
   const welcome = document.createElement("div");
   welcome.className = "welcome-state";
-  const mark = document.createElement("div");
+  const mark = document.createElement("img");
   mark.className = "welcome-mark";
-  mark.textContent = "LF";
+  mark.src = "./app-icon.svg";
+  mark.alt = "RepoForge 代码锻造智能体";
   const kicker = document.createElement("span");
   kicker.className = "welcome-kicker";
-  kicker.textContent = "LOCAL WORKSPACE";
+  kicker.textContent = "REPOFORGE · 代码锻造";
   const heading = document.createElement("h1");
   heading.textContent = project ? `${project.name} 已就绪` : "从项目结构开始";
   const copy = document.createElement("p");
@@ -1158,6 +1198,87 @@ function codePreview(content: string): HTMLElement {
   code.textContent = content;
   frame.append(lineNumbers, code);
   return frame;
+}
+
+function captureCodeSelection(event?: MouseEvent): void {
+  if (!currentFile || activeDiffPath) {
+    hideCodeSelectionToolbar();
+    return;
+  }
+  let startOffset = 0;
+  let endOffset = 0;
+  let content = currentFile.content;
+  if (manualEditor) {
+    startOffset = manualEditor.textarea.selectionStart;
+    endOffset = manualEditor.textarea.selectionEnd;
+    content = manualEditor.textarea.value;
+  } else {
+    const code = previewContent.querySelector<HTMLElement>(".code-view");
+    if (!code) {
+      hideCodeSelectionToolbar();
+      return;
+    }
+    const offsets = selectionOffsetsWithin(code);
+    if (!offsets) {
+      hideCodeSelectionToolbar();
+      return;
+    }
+    ({ startOffset, endOffset } = offsets);
+  }
+  const normalized = normalizeCodeSelection({
+    relativePath: currentFile.relativePath,
+    language: currentFile.language,
+    content,
+    startOffset,
+    endOffset,
+  });
+  if (!normalized) {
+    hideCodeSelectionToolbar();
+    return;
+  }
+  activeCodeSelection = normalized;
+  codeSelectionLabel.textContent = `第 ${normalized.startLine}—${normalized.endLine} 行`;
+  const x = event ? event.clientX : previewContent.getBoundingClientRect().right - 24;
+  const y = event ? event.clientY : previewContent.getBoundingClientRect().top + 64;
+  codeSelectionToolbar.style.left = `${Math.max(16, Math.min(window.innerWidth - 520, x))}px`;
+  codeSelectionToolbar.style.top = `${Math.max(72, Math.min(window.innerHeight - 72, y + 12))}px`;
+  codeSelectionToolbar.hidden = false;
+}
+
+function selectionOffsetsWithin(element: HTMLElement): { startOffset: number; endOffset: number } | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) return null;
+  const prefix = document.createRange();
+  prefix.selectNodeContents(element);
+  prefix.setEnd(range.startContainer, range.startOffset);
+  const startOffset = prefix.toString().length;
+  return { startOffset, endOffset: startOffset + range.toString().length };
+}
+
+function applyCodeSelectionAction(action: CodeSelectionAction): void {
+  if (!activeCodeSelection || runIsActive) return;
+  const generated = buildCodeSelectionTask(action, activeCodeSelection);
+  const existing = taskInput.value.trim();
+  const next = existing ? `${existing}\n\n${generated}` : generated;
+  if (next.length > MAX_TASK_CHARS) {
+    notify("当前任务加上代码选区后超过 20,000 字符，请先精简任务或选区。");
+    return;
+  }
+  taskInput.value = next;
+  selectedFile = activeCodeSelection.relativePath;
+  selectedContext.textContent = `上下文：${activeCodeSelection.relativePath} · 第 ${activeCodeSelection.startLine}—${activeCodeSelection.endLine} 行`;
+  scheduleDraftPersistence();
+  hideCodeSelectionToolbar();
+  taskInput.focus();
+  taskInput.setSelectionRange(taskInput.value.length, taskInput.value.length);
+  notify("代码选区已加入可编辑的任务草稿，确认后再发送。 ");
+}
+
+function hideCodeSelectionToolbar(): void {
+  activeCodeSelection = null;
+  codeSelectionToolbar.hidden = true;
 }
 
 function setPreviewCopyValues(relativePath: string, content: string): void {
@@ -1926,12 +2047,20 @@ async function stopRun(): Promise<void> {
 }
 
 function handleAgentEvent(event: AgentEvent): void {
+  if (event.type === "run_started") {
+    activeRunEvents = [event];
+  } else if (event.type !== "assistant_delta") {
+    activeRunEvents.push(event);
+  }
   switch (event.type) {
     case "run_started":
       lastAssistantMessage = "";
       resetStreamingTimeline();
       resetPlanUi();
       activeToolTimelineItems.clear();
+      liveOutcomeCard = null;
+      changes = [];
+      renderChanges();
       renderTokenUsage(null);
       setRunning(true);
       appendConversationMessage("user", event.task, "你", undefined, true);
@@ -1996,6 +2125,11 @@ function handleAgentEvent(event: AgentEvent): void {
       }
       lastAssistantMessage = "";
       setRunning(false);
+      liveOutcomeCard = appendOutcomeCard(
+        summarizeRunOutcome(activeRunEvents, changes),
+        "本次任务成果",
+        true,
+      );
       break;
     case "run_cancelled":
       finishInterruptedStream("模型响应已停止");
@@ -2047,6 +2181,129 @@ function appendContinueRunAction(item: HTMLElement): void {
     notify("已准备继续指令，确认后发送即可。");
   });
   body.append(button);
+}
+
+function appendOutcomeCard(
+  outcome: RunOutcomeMetrics,
+  title: string,
+  interactive: boolean,
+): HTMLElement {
+  const shouldStick = isTimelineNearBottom();
+  const card = buildOutcomeCard(outcome, title, interactive);
+  timeline.append(card);
+  trimTimeline();
+  scrollTimelineIfNeeded(shouldStick);
+  return card;
+}
+
+function buildOutcomeCard(
+  outcome: RunOutcomeMetrics,
+  title: string,
+  interactive: boolean,
+): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "run-outcome-card";
+  const header = document.createElement("header");
+  const mark = document.createElement("span");
+  mark.className = "run-outcome-mark";
+  mark.textContent = "✓";
+  const heading = document.createElement("div");
+  const kicker = document.createElement("small");
+  kicker.textContent = "REPOFORGE RESULT";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  heading.append(kicker, strong);
+  header.append(mark, heading);
+
+  const metrics = document.createElement("div");
+  metrics.className = "run-outcome-metrics";
+  metrics.append(
+    outcomeMetric(
+      "代码变更",
+      `${outcome.changedFileCount} 个文件${outcome.changedFileCount > 0
+        ? outcome.lineStatsEstimated && outcome.additions === 0 && outcome.deletions === 0
+          ? " · 行数未记录"
+          : ` · ${outcome.lineStatsEstimated ? "约 " : ""}+${outcome.additions} / -${outcome.deletions}`
+        : ""}`,
+      outcome.changedFileCount > 0 ? "accent" : "neutral",
+    ),
+    outcomeMetric(
+      "验证结果",
+      outcome.testCount !== undefined
+        ? `${outcome.testCount} 项测试通过`
+        : outcome.commandCalls > 0
+          ? `${outcome.commandCalls} 条命令已执行`
+          : "未执行命令",
+      outcome.testCount !== undefined ? "success" : "neutral",
+    ),
+    outcomeMetric(
+      "工具调用",
+      `${outcome.toolCalls} 次${outcome.failedToolCalls > 0 ? ` · ${outcome.failedToolCalls} 次失败` : " · 无失败"}`,
+      outcome.failedToolCalls > 0 ? "warning" : "success",
+    ),
+    outcomeMetric(
+      "Token",
+      outcome.tokenUsage
+        ? `${outcome.tokenUsage.estimated ? "约 " : ""}${formatTokenCount(outcome.tokenUsage.totalTokens)}`
+        : "未记录",
+      "neutral",
+    ),
+  );
+  card.append(header, metrics);
+
+  if (interactive) {
+    const actions = document.createElement("footer");
+    const changesButton = document.createElement("button");
+    changesButton.type = "button";
+    changesButton.textContent = "查看变更";
+    changesButton.disabled = changes.length === 0;
+    changesButton.addEventListener("click", () => {
+      const first = changes[0];
+      if (first) showDiff(first);
+    });
+    const history = document.createElement("button");
+    history.type = "button";
+    history.textContent = "查看完整记录";
+    history.addEventListener("click", () => void openHistory());
+    const followUp = document.createElement("button");
+    followUp.type = "button";
+    followUp.textContent = "继续追问";
+    followUp.addEventListener("click", () => {
+      taskInput.value = "请基于刚才的修改和验证结果，继续完成以下调整：\n";
+      scheduleDraftPersistence();
+      taskInput.focus();
+      taskInput.setSelectionRange(taskInput.value.length, taskInput.value.length);
+    });
+    actions.append(changesButton, history, followUp);
+    card.append(actions);
+  }
+  return card;
+}
+
+function outcomeMetric(
+  label: string,
+  value: string,
+  tone: "neutral" | "accent" | "success" | "warning",
+): HTMLElement {
+  const item = document.createElement("div");
+  item.className = `run-outcome-metric ${tone}`;
+  const copy = document.createElement("span");
+  copy.textContent = label;
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  item.append(copy, strong);
+  return item;
+}
+
+function refreshLiveOutcomeCard(): void {
+  if (!liveOutcomeCard?.isConnected) return;
+  const replacement = buildOutcomeCard(
+    summarizeRunOutcome(activeRunEvents, changes),
+    "本次任务成果",
+    true,
+  );
+  liveOutcomeCard.replaceWith(replacement);
+  liveOutcomeCard = replacement;
 }
 
 function beginStreamingTimeline(step: number): void {
@@ -2956,6 +3213,7 @@ async function showHistoryDetail(id: string): Promise<void> {
 }
 
 function renderHistoryDetail(detail: RunHistoryDetail): void {
+  stopHistoryReplay();
   historyDetail.replaceChildren();
   const heading = document.createElement("header");
   const headingCopy = document.createElement("div");
@@ -2968,7 +3226,12 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
   timestamp.dateTime = detail.createdAt;
   timestamp.textContent = `${formatHistoryDate(detail.createdAt)} · ${detail.steps} 步 · ${detail.eventCount} 条事件`;
   headingCopy.append(status, task, timestamp);
-  heading.append(headingCopy);
+  const replayButton = document.createElement("button");
+  replayButton.type = "button";
+  replayButton.className = "history-replay-button";
+  replayButton.textContent = "回放过程";
+  replayButton.disabled = detail.events.length === 0;
+  heading.append(headingCopy, replayButton);
 
   const summary = document.createElement("section");
   summary.className = "history-summary";
@@ -3016,9 +3279,14 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
 
   const events = document.createElement("section");
   events.className = "history-events";
+  const eventsHeader = document.createElement("div");
+  eventsHeader.className = "history-events-header";
   const eventsTitle = document.createElement("strong");
   eventsTitle.textContent = "执行过程";
-  events.append(eventsTitle);
+  const replayProgress = document.createElement("span");
+  replayProgress.textContent = "本地记录 · 不重新执行";
+  eventsHeader.append(eventsTitle, replayProgress);
+  events.append(eventsHeader);
   const eventList = document.createElement("div");
   eventList.className = "history-event-list";
   for (const event of detail.events) {
@@ -3035,7 +3303,21 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
     eventList.append(historyLoading("没有可显示的过程事件。"));
   }
   events.append(eventList);
+  replayButton.addEventListener("click", () => {
+    if (historyReplayRunning) {
+      stopHistoryReplay();
+      replayButton.textContent = "重新回放";
+      replayProgress.textContent = "已停止 · 全部记录可见";
+      return;
+    }
+    startHistoryReplay(eventList, replayButton, replayProgress);
+  });
   const plan = renderHistoryPlan(detail.plan);
+  const outcome = buildOutcomeCard(
+    detail.outcome ?? fallbackHistoryOutcome(detail),
+    "任务成果概览",
+    false,
+  );
 
   const files = document.createElement("section");
   files.className = "history-files";
@@ -3056,7 +3338,7 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
     files.append(list);
   }
 
-  historyDetail.append(heading, summary);
+  historyDetail.append(heading, outcome, summary);
   if (context.childElementCount > 0) {
     historyDetail.append(context);
   }
@@ -3064,6 +3346,61 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
     historyDetail.append(plan);
   }
   historyDetail.append(events, files);
+}
+
+function fallbackHistoryOutcome(detail: RunHistoryDetail): RunOutcomeMetrics {
+  const outcome = summarizeRunOutcome(detail.events, []);
+  return {
+    ...outcome,
+    changedFileCount: detail.changedFiles.length,
+    lineStatsEstimated: detail.changedFiles.length > 0,
+  };
+}
+
+function startHistoryReplay(
+  eventList: HTMLElement,
+  button: HTMLButtonElement,
+  progress: HTMLElement,
+): void {
+  stopHistoryReplay();
+  const items = Array.from(eventList.querySelectorAll<HTMLElement>(".history-event"));
+  if (items.length === 0) return;
+  historyReplayRunning = true;
+  items.forEach((item) => item.classList.add("replay-pending"));
+  button.textContent = "停止回放";
+  let index = 0;
+  const delay = replayFrameDelay(items.length);
+  const showNext = (): void => {
+    if (!historyReplayRunning) return;
+    const previous = items[index - 1];
+    previous?.classList.remove("replay-current");
+    const current = items[index];
+    if (!current) {
+      historyReplayRunning = false;
+      historyReplayTimer = undefined;
+      button.textContent = "重新回放";
+      progress.textContent = `回放完成 · ${items.length} / ${items.length}`;
+      return;
+    }
+    current.classList.remove("replay-pending");
+    current.classList.add("replay-current");
+    progress.textContent = `正在回放 · ${index + 1} / ${items.length}`;
+    current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    index += 1;
+    historyReplayTimer = window.setTimeout(showNext, delay);
+  };
+  showNext();
+}
+
+function stopHistoryReplay(): void {
+  historyReplayRunning = false;
+  if (historyReplayTimer !== undefined) {
+    window.clearTimeout(historyReplayTimer);
+    historyReplayTimer = undefined;
+  }
+  historyDetail.querySelectorAll<HTMLElement>(".history-event").forEach((item) => {
+    item.classList.remove("replay-pending", "replay-current");
+  });
 }
 
 function renderHistoryPlan(plan: PlanSnapshot | undefined): HTMLElement | null {

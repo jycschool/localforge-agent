@@ -13,6 +13,7 @@ RepoForge，中文名“代码锻造”，是一个独立运行的项目编程�
 - 打开本地项目并显示过滤后的目录结构；重启后安全恢复上次授权项目和按项目隔离的未发送草稿。
 - 支持 `Ctrl+P` 按文件名或路径快速打开；预览带行号，并可复制项目内路径或文件内容。
 - 可在 FILE 模式手动编辑文本并用 `Ctrl+S` 保存，也可在已有目录中新建文本文件；保存前校验内容摘要，外部冲突不会被覆盖，手动修改不冒充 Agent Diff。
+- 在 FILE 预览或编辑区选中代码后，可一键生成“解释、查错、修改、生成测试”任务草稿；任务完成后显示基于真实事件和文件快照的成果卡，历史详情还能无副作用回放执行过程。
 - 使用 OpenAI-compatible `/chat/completions`、SSE 流式输出和原生 tool calling 完成多轮任务；不支持 SSE 的兼容服务仍可返回完整 JSON。
 - 列表、搜索、读取、精确替换和写入工作区文件。
 - 对每条本地命令显示原因、命令和工作目录，并由用户逐次批准。
@@ -52,7 +53,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-short
 
 此后双击桌面的 `RepoForge 代码锻造` 即可直接启动现有 `dist` 构建，不会弹出命令行窗口。源码变化后先运行一次 `pnpm run build`；如果移动项目目录或重新安装依赖，应重新创建快捷方式。该方式依赖本机项目目录与 `node_modules`，不是可分发安装包。
 
-开发冻结前可运行 `pnpm run verify` 完成类型检查、127 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+开发冻结前可运行 `pnpm run verify` 完成类型检查、132 项测试和构建，再运行 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
 仓库同时配置了 Windows GitHub Actions 质量门禁：推送到 `main`、提交 Pull Request 或手动触发时，会在不注入真实模型 Token 的干净环境中安装锁定依赖，并依次执行类型检查、自动化测试、构建和交付检查。
 

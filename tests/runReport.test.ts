@@ -20,6 +20,19 @@ describe("run evidence report", () => {
       executionMode: "plan",
       eventCount: 2,
       changedFiles: ["src/login.ts"],
+      outcome: {
+        changedFileCount: 1,
+        additions: 3,
+        deletions: 1,
+        lineStatsEstimated: false,
+        toolCalls: 2,
+        commandCalls: 1,
+        successfulToolCalls: 2,
+        failedToolCalls: 0,
+        toolDurationMs: 50,
+        testCount: 8,
+        tokenUsage: { promptTokens: 40, completionTokens: 10, totalTokens: 50, estimated: false },
+      },
       createdAt: "2026-08-28T00:00:00.000Z",
       updatedAt: "2026-08-28T00:01:00.000Z",
       events: [
@@ -41,6 +54,8 @@ describe("run evidence report", () => {
     expect(report).toContain("# RepoForge 代码锻造智能体任务证据报告");
     expect(report).toContain("qwen-test");
     expect(report).toContain("25 Token");
+    expect(report).toContain("8 项通过");
+    expect(report).toContain("+3 / -1 行");
     expect(report).toContain("src/login.ts");
     expect(report).toContain("执行模式：先规划");
     expect(report).toContain("修复登录校验");

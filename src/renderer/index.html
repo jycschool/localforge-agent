@@ -611,6 +611,15 @@
       </form>
     </dialog>
 
+    <div id="code-selection-toolbar" class="code-selection-toolbar" role="toolbar" aria-label="代码选区快捷任务" hidden>
+      <span id="code-selection-label">已选择代码</span>
+      <button type="button" data-selection-action="explain">解释</button>
+      <button type="button" data-selection-action="review">查错</button>
+      <button type="button" data-selection-action="modify">修改</button>
+      <button type="button" data-selection-action="test">生成测试</button>
+      <button type="button" data-selection-action="attach">加入任务</button>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
   </body>
