@@ -178,6 +178,14 @@ export class AgentLoop {
             repeatedFailure = undefined;
           }
         }
+
+        const completionIssue = options.validateCompletion?.();
+        if (options.validateCompletion && !completionIssue) {
+          const summary =
+            assistant.content?.trim() || "计划已完成，所有完成门禁均已通过。";
+          options.onEvent({ type: "run_completed", summary, steps });
+          return { status: "completed", summary, steps, messages };
+        }
       }
 
       const summary =

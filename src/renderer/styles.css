@@ -504,7 +504,7 @@ textarea:focus-visible {
   height: calc(100% - 46px);
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 4px 8px 12px;
+  padding: 6px 7px 12px;
 }
 
 .empty-copy {
@@ -523,8 +523,10 @@ textarea:focus-visible {
 }
 
 .tree-list .tree-list {
-  width: calc(100% - 14px);
-  margin-left: 14px;
+  width: calc(100% - 11px);
+  margin-left: 11px;
+  padding-left: 3px;
+  border-left: 1px solid rgba(143, 158, 210, 0.11);
 }
 
 .tree-list > li,
@@ -538,13 +540,13 @@ textarea:focus-visible {
   align-items: center;
   width: 100%;
   min-width: 0;
-  height: 27px;
-  padding: 0 7px 0 2px;
-  border-radius: 6px;
-  color: #c8cbd4;
+  height: 30px;
+  padding: 0 7px 0 3px;
+  border-radius: 7px;
+  color: #cbd0dc;
   cursor: pointer;
   font-family: var(--explorer-font);
-  font-size: 12.5px;
+  font-size: 12.75px;
   font-weight: 400;
   list-style: none;
   white-space: nowrap;
@@ -557,53 +559,72 @@ textarea:focus-visible {
 .tree-twistie,
 .tree-indent {
   display: inline-grid;
-  flex: 0 0 16px;
+  flex: 0 0 15px;
   place-items: center;
-  width: 16px;
-  height: 22px;
+  width: 15px;
+  height: 24px;
 }
 
 .tree-twistie::before {
-  width: 5px;
-  height: 5px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  color: #737b8d;
+  width: 6px;
+  height: 7px;
+  background: #7d8598;
+  clip-path: polygon(18% 8%, 82% 50%, 18% 92%);
   content: "";
-  transform: translateX(-1px) rotate(-45deg);
+  transform: translateX(-1px);
   transform-origin: center;
-  transition: transform 80ms ease;
+  transition: background 100ms ease, transform 100ms ease;
 }
 
 .tree-directory[open] > summary .tree-twistie::before {
-  transform: translateY(-1px) rotate(45deg);
+  background: #aab3c8;
+  transform: translateX(-1px) rotate(90deg);
 }
 
 .tree-folder-icon {
-  width: 15px;
-  height: 11px;
-  flex: 0 0 15px;
+  width: 17px;
+  height: 13px;
+  flex: 0 0 17px;
+  box-sizing: border-box;
   margin: 1px 6px 0 0;
   position: relative;
-  border-radius: 3px;
-  background: #7185c4;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.16);
-  opacity: 0.88;
+  border: 1px solid #7187d1;
+  border-radius: 2px 3px 3px 3px;
+  background: linear-gradient(145deg, rgba(119, 141, 217, 0.42), rgba(78, 96, 157, 0.22));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .tree-folder-icon::before {
-  width: 6px;
-  height: 3px;
+  width: 7px;
+  height: 4px;
+  box-sizing: border-box;
   position: absolute;
-  top: -2px;
-  left: 1px;
-  border-radius: 1px 1px 0 0;
-  background: inherit;
+  top: -4px;
+  left: -1px;
+  border: 1px solid #7187d1;
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  background: #4f5f99;
+  content: "";
+}
+
+.tree-folder-icon::after {
+  position: absolute;
+  inset: 2px 2px auto;
+  height: 1px;
+  border-radius: 1px;
+  background: rgba(194, 207, 255, 0.32);
   content: "";
 }
 
 .tree-directory[open] > summary .tree-folder-icon {
-  background: #8ea1e2;
+  border-color: #91a7f2;
+  background: linear-gradient(145deg, rgba(139, 163, 241, 0.52), rgba(78, 101, 181, 0.28));
+}
+
+.tree-directory[open] > summary .tree-folder-icon::before {
+  border-color: #91a7f2;
+  background: #6579bf;
 }
 
 .tree-label,
@@ -619,18 +640,18 @@ textarea:focus-visible {
   align-items: center;
   width: 100%;
   min-width: 0;
-  height: 27px;
-  padding: 0 7px 0 2px;
+  height: 30px;
+  padding: 0 7px 0 3px;
   overflow: hidden;
   border: 0;
-  border-radius: 6px;
-  color: #c8cbd4;
+  border-radius: 7px;
+  color: #cbd0dc;
   background: transparent;
   cursor: pointer;
   font-family: var(--explorer-font);
-  font-size: 12.5px;
+  font-size: 12.75px;
   font-weight: 400;
-  line-height: 27px;
+  line-height: 30px;
   transition: color 100ms ease, background 100ms ease;
   text-align: left;
   text-overflow: ellipsis;
@@ -643,7 +664,7 @@ textarea:focus-visible {
 .tree-file.selected,
 .change-file.selected {
   color: var(--text);
-  background: rgba(151, 164, 222, 0.08);
+  background: rgba(151, 164, 222, 0.1);
 }
 
 .tree-file.selected {
@@ -654,16 +675,23 @@ textarea:focus-visible {
 
 .file-icon {
   display: inline-grid;
-  flex: 0 0 17px;
+  flex: 0 0 18px;
   place-items: center;
-  width: 17px;
-  height: 17px;
-  margin-right: 4px;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  margin-right: 5px;
+  border: 1px solid color-mix(in srgb, currentColor 42%, transparent);
+  border-radius: 5px;
   color: #9aa0a6;
-  font-family: "Segoe UI", sans-serif;
-  font-size: 9px;
-  font-weight: 700;
+  background: color-mix(in srgb, currentColor 20%, transparent);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
+  font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  font-size: 8.25px;
+  font-weight: 750;
+  letter-spacing: -0.6px;
   line-height: 1;
+  text-transform: uppercase;
 }
 
 .icon-ts { color: #519aba; }
@@ -683,22 +711,39 @@ textarea:focus-visible {
 .icon-rust { color: #ce9178; }
 .icon-go { color: #4ec9b0; }
 .icon-java { color: #d19a66; }
-.icon-config { color: #9da5b4; }
+.icon-config { color: #aa9ee8; }
 .icon-lock { color: #d7ba7d; }
 .icon-data { color: #b5cea8; }
 .icon-text { color: #aab2bd; }
+.icon-c,
+.icon-cpp,
+.icon-csharp { color: #7aa7f7; }
+.icon-dart { color: #58b7c9; }
+.icon-kotlin { color: #b084eb; }
+.icon-php { color: #a8a9d6; }
+.icon-ruby { color: #e06c75; }
+.icon-svelte { color: #ef7a55; }
+.icon-swift { color: #f29b62; }
+.icon-vue { color: #52b788; }
 
 .file-icon.icon-default {
   position: relative;
-  color: transparent;
+  border-color: transparent;
+  color: #9aa5b8;
+  background: transparent;
+  box-shadow: none;
 }
 
-.file-icon.icon-default::before {
-  width: 10px;
-  height: 12px;
-  border: 1px solid #858585;
-  border-radius: 1px;
-  content: "";
+.file-icon.icon-default svg {
+  width: 15px;
+  height: 17px;
+  overflow: visible;
+  fill: rgba(154, 165, 184, 0.07);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
 }
 
 .change-file {

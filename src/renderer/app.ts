@@ -803,11 +803,7 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     const indent = document.createElement("span");
     indent.className = "tree-indent";
     indent.setAttribute("aria-hidden", "true");
-    const visual = fileVisualFor(relativePath);
-    const icon = document.createElement("span");
-    icon.className = `file-icon ${visual.className}`;
-    icon.textContent = visual.label;
-    icon.setAttribute("aria-hidden", "true");
+    const icon = createFileIcon(relativePath);
     const label = document.createElement("span");
     label.className = "file-label";
     label.textContent = relativePath.split("/").pop() ?? relativePath;
@@ -817,6 +813,31 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     list.append(item);
   }
   return list;
+}
+
+function createFileIcon(relativePath: string): HTMLSpanElement {
+  const visual = fileVisualFor(relativePath);
+  const icon = document.createElement("span");
+  icon.className = `file-icon ${visual.className}`;
+  icon.setAttribute("aria-hidden", "true");
+  if (visual.className !== "icon-default") {
+    icon.textContent = visual.label;
+    return icon;
+  }
+
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  svg.setAttribute("viewBox", "0 0 16 18");
+  svg.setAttribute("focusable", "false");
+  const outline = document.createElementNS(namespace, "path");
+  outline.setAttribute("d", "M3 1.5h5.6l4.1 4.1v10.9H3z");
+  const fold = document.createElementNS(namespace, "path");
+  fold.setAttribute("d", "M8.6 1.8v4h3.8");
+  const lines = document.createElementNS(namespace, "path");
+  lines.setAttribute("d", "M5.4 9.2h4.9M5.4 12.2h4.9");
+  svg.append(outline, fold, lines);
+  icon.append(svg);
+  return icon;
 }
 
 function populateDirectory(details: HTMLDetailsElement, directory: TreeNode, depth: number): void {
@@ -1080,11 +1101,7 @@ function renderChanges(): void {
     kind.textContent = evidence.kind === "added" ? "A" : "M";
     kind.title = evidence.kind === "added" ? "新增文件" : "修改文件";
 
-    const visual = fileVisualFor(change.relativePath);
-    const icon = document.createElement("span");
-    icon.className = `file-icon ${visual.className}`;
-    icon.textContent = visual.label;
-    icon.setAttribute("aria-hidden", "true");
+    const icon = createFileIcon(change.relativePath);
 
     const path = document.createElement("span");
     path.className = "change-path";
@@ -1575,7 +1592,7 @@ function newModelProfile(): void {
   profileNameInput.value = "新模型配置";
   apiBaseUrlInput.value = source?.apiBaseUrl ?? "https://api-inference.modelscope.cn/v1";
   modelNameInput.value = source?.model ?? "Qwen/Qwen3-Coder-30B-A3B-Instruct";
-  maxStepsInput.value = String(source?.maxSteps ?? 12);
+  maxStepsInput.value = String(source?.maxSteps ?? 20);
   commandTimeoutInput.value = String(Math.round((source?.commandTimeoutMs ?? 120_000) / 1000));
   permissionModeInput.value = source?.permissionMode ?? "workspace";
   responseProfileInput.value = source?.responseProfile ?? "balanced";
@@ -3150,6 +3167,9 @@ async function answerPlanApproval(approved: boolean): Promise<void> {
     }
     activePlanApproval = null;
     planApprovalPanel.hidden = true;
+    if (latestPlan) {
+      renderPlan(latestPlan);
+    }
     appendTimeline(
       approved ? "计划已确认" : "计划已退回",
       approved ? `将按你确认的 ${items.length} 个步骤执行。` : "Agent 会收到拒绝结果。",
@@ -3164,7 +3184,7 @@ async function answerPlanApproval(approved: boolean): Promise<void> {
 }
 
 function renderPlan(plan: PlanSnapshot): void {
-  planPanel.hidden = false;
+  planPanel.hidden = Boolean(activePlanApproval);
   planTitle.textContent = planStateLabel(plan.state);
   const finished = plan.items.filter(
     (item) => item.status === "completed" || item.status === "skipped",

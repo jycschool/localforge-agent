@@ -72,16 +72,8 @@ export class PlanController {
                 type: "array",
                 minItems: 1,
                 maxItems: MAX_PLAN_ITEMS,
-                description: "按执行顺序排列的步骤；每项应可验证，避免‘完成任务’之类空泛表述。",
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  required: ["title"],
-                  properties: {
-                    id: { type: "string", description: "修订时可沿用已有步骤 id。" },
-                    title: { type: "string", minLength: 1, maxLength: 160 },
-                  },
-                },
+                description: "按执行顺序排列的步骤标题字符串；每项应可验证，避免‘完成任务’之类空泛表述。",
+                items: { type: "string", minLength: 1, maxLength: 160 },
               },
             },
           },
@@ -255,7 +247,10 @@ function parseProposedItems(value: unknown): Array<Omit<PlanItem, "status">> {
   }
   const used = new Set<string>();
   return value.map((raw, index) => {
-    if (!isRecord(raw)) throw new Error(`steps[${index}] must be an object.`);
+    if (typeof raw === "string") {
+      return { id: `step-${index + 1}`, title: requiredText(raw, `steps[${index}]`, 160) };
+    }
+    if (!isRecord(raw)) throw new Error(`steps[${index}] must be a string or object.`);
     const title = requiredText(raw.title, `steps[${index}].title`, 160);
     const requestedId = typeof raw.id === "string" ? raw.id.trim() : "";
     let id = requestedId || `step-${index + 1}`;

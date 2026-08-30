@@ -255,6 +255,9 @@ function consumeStreamEvent(
   }
   const choices = payload.choices;
   if (!Array.isArray(choices)) {
+    if (isMetadataOnlyStreamPayload(payload)) {
+      return false;
+    }
     throw protocolError("stream chunk choices must be an array");
   }
   // Some compatible services send a final usage-only chunk with no choices.
@@ -283,6 +286,13 @@ function consumeStreamEvent(
   }
   mergeStreamingToolCalls(delta.tool_calls, accumulator.toolCalls);
   return false;
+}
+
+function isMetadataOnlyStreamPayload(payload: Record<string, unknown>): boolean {
+  return (
+    (payload.choices === undefined || payload.choices === null) &&
+    payload.error === undefined
+  );
 }
 
 function normalizeStreamText(value: unknown, field: string): string {
@@ -634,19 +644,10 @@ function validateToolArguments(raw: string, index: number): void {
       `message.tool_calls[${index}].function.arguments exceeds the size limit`,
     );
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw protocolError(
-      `message.tool_calls[${index}].function.arguments is not valid JSON`,
-    );
-  }
-  if (!isRecord(parsed)) {
-    throw protocolError(
-      `message.tool_calls[${index}].function.arguments must encode an object`,
-    );
-  }
+
+  // Keep transport validation limited to the response envelope. Argument JSON is
+  // validated by AgentLoop so a model can see the tool error and correct a
+  // malformed call on its next turn instead of terminating the entire run.
 }
 
 function modelErrorMessage(payload: Record<string, unknown>): string | undefined {

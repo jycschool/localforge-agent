@@ -23,6 +23,12 @@ describe("planning workflow", () => {
     const context = toolContext(requestPlanApproval);
 
     expect(toolNames(registry)).toEqual(["read_file", "propose_plan"]);
+    expect(
+      registry.schemas().find((schema) => schema.function.name === "propose_plan")
+        ?.function.parameters,
+    ).toMatchObject({
+      properties: { steps: { items: { type: "string" } } },
+    });
     await expect(registry.execute("write_file", {}, context)).resolves.toMatchObject({
       isError: true,
     });
@@ -96,6 +102,27 @@ describe("planning workflow", () => {
     });
     expect(controller.completionIssue()).toBeUndefined();
     expect(registry.schemas()).toEqual([]);
+  });
+
+  it("accepts the simplified string checklist emitted by compatible models", async () => {
+    const controller = new PlanController(() => undefined);
+    const registry = registryFor(controller);
+    const context = toolContext(async (request) => ({
+      approved: true,
+      items: request.items.map((item) => ({ id: item.id, title: item.title })),
+    }));
+
+    const proposal = await registry.execute("propose_plan", {
+      explanation: "简化计划参数",
+      steps: ["记录失败基线", "修复实现", "复测通过"],
+    }, context);
+
+    expect(proposal.isError).not.toBe(true);
+    expect(controller.snapshot()?.items).toMatchObject([
+      { id: "step-1", title: "记录失败基线" },
+      { id: "step-2", title: "修复实现" },
+      { id: "step-3", title: "复测通过" },
+    ]);
   });
 
   it("keeps the previously approved plan when a scope revision is rejected", async () => {

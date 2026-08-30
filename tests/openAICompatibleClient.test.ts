@@ -102,6 +102,38 @@ describe("OpenAICompatibleClient", () => {
     ]);
   });
 
+  it("accepts compatible metadata-only stream chunks without choices", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          [
+            'data: {"id":"chat-1","object":"chat.completion.chunk","model":"qwen","choices":null}\n\n',
+            'data: {"request_id":"provider-heartbeat","status":"streaming"}\n\n',
+            'data: {"choices":[{"delta":{"content":"已恢复"}}]}\n\n',
+            'data: {"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}\n\n',
+            "data: [DONE]\n\n",
+          ].join(""),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    );
+    const usages: Array<{ totalTokens: number; estimated: boolean }> = [];
+
+    const assistant = await createClient().complete(
+      [],
+      [],
+      new AbortController().signal,
+      undefined,
+      (usage) => usages.push(usage),
+    );
+
+    expect(assistant.content).toBe("已恢复");
+    expect(usages).toEqual([
+      expect.objectContaining({ totalTokens: 15, estimated: false }),
+    ]);
+  });
+
   it("clearly marks locally estimated usage and sends the selected output budget", async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -303,22 +335,32 @@ describe("OpenAICompatibleClient", () => {
     ).rejects.toThrow("duplicate id");
   });
 
-  it("rejects tool arguments that do not encode an object", async () => {
+  it("forwards malformed tool arguments for execution-layer recovery", async () => {
     stubPayload({
       choices: [
         {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [toolCall("call-1", "[]")],
+            tool_calls: [
+              toolCall("call-1", "[]"),
+              toolCall("call-2", "{not-json"),
+            ],
           },
         },
       ],
     });
 
-    await expect(
-      createClient().complete([], [], new AbortController().signal),
-    ).rejects.toThrow("arguments must encode an object");
+    const assistant = await createClient().complete(
+      [],
+      [],
+      new AbortController().signal,
+    );
+
+    expect(assistant.tool_calls?.map((call) => call.function.arguments)).toEqual([
+      "[]",
+      "{not-json",
+    ]);
   });
 
   it("retries a transient rate limit and honors Retry-After", async () => {

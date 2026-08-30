@@ -45,7 +45,7 @@ const DEFAULT_PROFILE: StoredModelProfile = {
   name: "ModelScope · Qwen3 Coder 30B",
   apiBaseUrl: "https://api-inference.modelscope.cn/v1",
   model: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-  maxSteps: 12,
+  maxSteps: 20,
   commandTimeoutMs: 120_000,
   maxOutputChars: 20_000,
   permissionMode: "workspace",

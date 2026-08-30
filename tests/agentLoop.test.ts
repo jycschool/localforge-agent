@@ -231,6 +231,52 @@ describe("AgentLoop", () => {
     expect(events.some((event) => event.type === "tool_finished")).toBe(true);
   });
 
+  it("completes on the final allowed step when a tool passes the completion gate", async () => {
+    let finished = false;
+    const finishTool: AgentTool = {
+      schema: {
+        type: "function",
+        function: {
+          name: "finish_task",
+          description: "Finish the task.",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+      async execute() {
+        finished = true;
+        return { content: JSON.stringify({ completed: true }) };
+      },
+    };
+    const loop = new AgentLoop(
+      new ScriptedModel([
+        {
+          role: "assistant",
+          content: "修改和核验均已完成。",
+          tool_calls: [
+            {
+              id: "finish-1",
+              type: "function",
+              function: { name: "finish_task", arguments: "{}" },
+            },
+          ],
+        },
+      ]),
+      new ToolRegistry([finishTool]),
+    );
+    const events: AgentEvent[] = [];
+
+    const result = await loop.run({
+      ...defaultOptions(events),
+      maxSteps: 1,
+      validateCompletion: () => (finished ? undefined : "计划尚未完成。"),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.steps).toBe(1);
+    expect(result.summary).toBe("修改和核验均已完成。");
+    expect(events.at(-1)).toMatchObject({ type: "run_completed", steps: 1 });
+  });
+
   it("stops after the configured model step limit", async () => {
     const repeatedCalls = Array.from({ length: 3 }, (_, index) => ({
       role: "assistant" as const,
