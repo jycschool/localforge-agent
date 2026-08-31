@@ -337,11 +337,11 @@
       </div>
     </div>
 
-    <dialog id="settings-dialog" class="modal">
+    <dialog id="settings-dialog" class="modal" aria-labelledby="settings-title">
       <form id="settings-form" method="dialog">
         <header>
           <div>
-            <h2>模型设置</h2>
+            <h2 id="settings-title">模型设置</h2>
             <p>支持 OpenAI 兼容的 Chat Completions 接口。</p>
           </div>
           <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
@@ -432,12 +432,12 @@
       </form>
     </dialog>
 
-    <dialog id="skills-dialog" class="modal context-modal">
+    <dialog id="skills-dialog" class="modal context-modal" aria-labelledby="skills-title">
       <form method="dialog">
         <header>
           <div>
             <span class="modal-eyebrow">PROJECT CONTEXT</span>
-            <h2>本次任务使用的 Skills</h2>
+            <h2 id="skills-title">本次任务使用的 Skills</h2>
             <p>来自项目内 <code>.localforge/skills/*.md</code>，运行时重新读取；每次最多选择 8 个。</p>
           </div>
           <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
@@ -453,12 +453,12 @@
       </form>
     </dialog>
 
-    <dialog id="new-file-dialog" class="modal context-modal">
+    <dialog id="new-file-dialog" class="modal context-modal" aria-labelledby="new-file-title">
       <form id="new-file-form">
         <header>
           <div>
             <span class="modal-eyebrow">LOCAL PROJECT</span>
-            <h2>新建文本文件</h2>
+            <h2 id="new-file-title">新建文本文件</h2>
             <p>填写项目内相对路径；父目录需要已经存在，不会覆盖同名文件。</p>
           </div>
           <button id="close-new-file" class="close-button" aria-label="关闭" type="button">×</button>
@@ -477,7 +477,7 @@
       </form>
     </dialog>
 
-    <dialog id="skill-editor-dialog" class="modal context-modal">
+    <dialog id="skill-editor-dialog" class="modal context-modal" aria-labelledby="skill-editor-title">
       <form id="skill-editor-form">
         <header>
           <div>
@@ -515,12 +515,12 @@
       </form>
     </dialog>
 
-    <dialog id="memory-dialog" class="modal context-modal">
+    <dialog id="memory-dialog" class="modal context-modal" aria-labelledby="memory-title">
       <form id="memory-form">
         <header>
           <div>
             <span class="modal-eyebrow">PRIVATE PROJECT MEMORY</span>
-            <h2>项目记忆</h2>
+            <h2 id="memory-title">项目记忆</h2>
             <p>记录约定、偏好和长期背景；保存与本次是否启用分开控制。</p>
           </div>
           <button id="close-memory" class="close-button" aria-label="关闭" type="button">×</button>
@@ -556,12 +556,12 @@
       </form>
     </dialog>
 
-    <dialog id="history-dialog" class="modal history-modal">
+    <dialog id="history-dialog" class="modal history-modal" aria-labelledby="history-title">
       <form method="dialog">
         <header>
           <div>
             <span class="modal-eyebrow">LOCAL RUN HISTORY</span>
-            <h2>任务历史</h2>
+            <h2 id="history-title">任务历史</h2>
             <p>按项目保存在本机，包含执行状态、过程事件和改动文件。</p>
           </div>
           <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
@@ -588,12 +588,12 @@
       </form>
     </dialog>
 
-    <dialog id="context-preview-dialog" class="modal context-preview-modal">
+    <dialog id="context-preview-dialog" class="modal context-preview-modal" aria-labelledby="context-preview-title">
       <form method="dialog">
         <header>
           <div>
             <span class="modal-eyebrow">BEFORE SEND</span>
-            <h2>本次发送清单</h2>
+            <h2 id="context-preview-title">本次发送清单</h2>
             <p>这是发送给模型前的本地估算，不会发起模型请求。</p>
           </div>
           <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
@@ -606,12 +606,12 @@
       </form>
     </dialog>
 
-    <dialog id="quick-open-dialog" class="modal quick-open-modal">
+    <dialog id="quick-open-dialog" class="modal quick-open-modal" aria-labelledby="quick-open-title">
       <form id="quick-open-form" method="dialog">
         <header>
           <div>
             <span class="modal-eyebrow">QUICK OPEN · CTRL+P</span>
-            <h2>快速打开文件</h2>
+            <h2 id="quick-open-title">快速打开文件</h2>
           </div>
           <button class="close-button" value="cancel" aria-label="关闭" type="submit">×</button>
         </header>

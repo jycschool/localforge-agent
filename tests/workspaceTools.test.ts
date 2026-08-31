@@ -68,6 +68,11 @@ describe("workspace tools", () => {
       executionContext(),
     );
     expect(before.content).toContain("export const value = 1");
+    expect(JSON.parse(before.content)).toMatchObject({
+      path: "src/main.ts",
+      totalLines: 2,
+      hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
 
     const result = await tool(tools, "replace_in_file").execute(
       { path: "src/main.ts", oldText: "value = 1", newText: "value = 2" },
@@ -76,6 +81,67 @@ describe("workspace tools", () => {
     expect(result.isError).not.toBe(true);
     expect(tracker.list()).toHaveLength(1);
     expect(tracker.list()[0]?.originalContent).toContain("value = 1");
+  });
+
+  it("edits a line range only when the latest file hash matches", async () => {
+    const { tools, tracker, root } = await createFixture();
+    const readResult = await tool(tools, "read_file").execute(
+      { path: "src/main.ts" },
+      executionContext(),
+    );
+    const snapshot = JSON.parse(readResult.content) as { hash: string };
+    const editResult = await tool(tools, "edit_file_lines").execute(
+      {
+        path: "src/main.ts",
+        startLine: 1,
+        endLine: 1,
+        expectedHash: snapshot.hash,
+        replacement: "export const value = 3;",
+      },
+      executionContext(),
+    );
+
+    expect(editResult.isError).not.toBe(true);
+    expect(await readFile(path.join(root, "src", "main.ts"), "utf8")).toBe(
+      "export const value = 3;\n",
+    );
+    expect(tracker.list()[0]?.originalContent).toBe("export const value = 1;\n");
+    expect(JSON.parse(editResult.content)).toMatchObject({
+      path: "src/main.ts",
+      startLine: 1,
+      endLine: 1,
+      insertedLines: 1,
+      beforeHash: snapshot.hash,
+      afterHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+  });
+
+  it("rejects a stale line edit with a recoverable structured error", async () => {
+    const { tools, root } = await createFixture();
+    const readResult = await tool(tools, "read_file").execute(
+      { path: "src/main.ts" },
+      executionContext(),
+    );
+    const snapshot = JSON.parse(readResult.content) as { hash: string };
+    await writeFile(path.join(root, "src", "main.ts"), "export const value = 9;\n", "utf8");
+
+    await expect(
+      tool(tools, "edit_file_lines").execute(
+        {
+          path: "src/main.ts",
+          startLine: 1,
+          endLine: 1,
+          expectedHash: snapshot.hash,
+          replacement: "export const value = 3;",
+        },
+        executionContext(),
+      ),
+    ).rejects.toMatchObject({
+      errorDetails: {
+        code: "STALE_FILE_CONTENT",
+        retryable: true,
+      },
+    });
   });
 
   it("rejects oversized file reads, replacements, and writes", async () => {
@@ -121,6 +187,8 @@ describe("workspace tools", () => {
     expect(payload).toMatchObject({
       approved: false,
       error: "User rejected the command.",
+      code: "COMMAND_REJECTED",
+      retryable: false,
     });
     expect(payload.approvalDurationMs).toBeGreaterThanOrEqual(0);
   });
@@ -189,11 +257,18 @@ describe("workspace tools", () => {
       },
       executionContext(),
     );
-    const payload = JSON.parse(result.content) as { exitCode: number; stderr: string };
+    const payload = JSON.parse(result.content) as {
+      exitCode: number;
+      stderr: string;
+      code: string;
+      retryable: boolean;
+    };
 
     expect(result.isError).toBe(true);
     expect(payload.exitCode).toBe(7);
     expect(payload.stderr).toBe("failed");
+    expect(payload.code).toBe("COMMAND_FAILED");
+    expect(payload.retryable).toBe(true);
   });
 
   it("times out a command and terminates its descendant process", async () => {

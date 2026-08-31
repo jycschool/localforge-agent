@@ -39,6 +39,7 @@ import {
   type LineEnding,
 } from "./features/manualEditor";
 import { setupPanelResizing } from "./features/panelResizing";
+import { LatestRequestGuard } from "./features/latestRequest";
 import { rankQuickOpen, type QuickOpenMatch } from "./features/quickOpen";
 import {
   changeEvidence,
@@ -157,7 +158,9 @@ let historyReplayTimer: number | undefined;
 let historyReplayRunning = false;
 let outputFilter: OutputFilter = "all";
 let outputAutoFollow = true;
+let pendingFilePath: string | null = null;
 const expandedDirectories = new Set<string>();
+const fileOpenRequests = new LatestRequestGuard();
 const activeToolTimelineItems = new Map<string, HTMLElement>();
 const reviewedChangePaths = new Set<string>();
 const commandOutputEntries: CommandOutputEntry[] = [];
@@ -797,7 +800,7 @@ function renderTree(node: TreeNode, depth: number): HTMLUListElement {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `tree-file${selectedFile === relativePath ? " selected" : ""}`;
+    button.className = `tree-file${selectedFile === relativePath ? " selected" : ""}${pendingFilePath === relativePath ? " loading" : ""}`;
     button.title = relativePath;
     button.dataset.path = relativePath;
     const indent = document.createElement("span");
@@ -851,6 +854,7 @@ function populateDirectory(details: HTMLDetailsElement, directory: TreeNode, dep
 function updateFileSelection(): void {
   fileTree.querySelectorAll<HTMLButtonElement>(".tree-file").forEach((button) => {
     button.classList.toggle("selected", button.dataset.path === selectedFile);
+    button.classList.toggle("loading", button.dataset.path === pendingFilePath);
   });
 }
 
@@ -863,12 +867,32 @@ async function openFile(relativePath: string): Promise<void> {
     }
     return;
   }
+  const revision = fileOpenRequests.begin();
+  pendingFilePath = relativePath;
+  updateFileSelection();
+  renderManualEditorActions();
   try {
     const file = await api.readFile(relativePath);
+    if (!fileOpenRequests.isCurrent(revision)) {
+      return;
+    }
+    pendingFilePath = null;
     showFileSnapshot(file);
   } catch (error) {
+    if (!fileOpenRequests.isCurrent(revision)) {
+      return;
+    }
+    pendingFilePath = null;
+    updateFileSelection();
+    renderManualEditorActions();
     notify(errorMessage(error));
   }
+}
+
+function cancelPendingFileOpen(): void {
+  fileOpenRequests.cancel();
+  pendingFilePath = null;
+  updateFileSelection();
 }
 
 function showFileSnapshot(file: FileSnapshot): void {
@@ -1006,13 +1030,13 @@ function cancelManualEdit(force = false): void {
 function renderManualEditorActions(): void {
   const editing = Boolean(manualEditor);
   editFileButton.hidden = !currentFile || editing || activeDiffPath !== null;
-  editFileButton.disabled = runIsActive || !currentFile;
+  editFileButton.disabled = runIsActive || !currentFile || pendingFilePath !== null;
   saveFileButton.hidden = !editing;
   saveFileButton.disabled = runIsActive || !editing;
   cancelFileEditButton.hidden = !editing;
   cancelFileEditButton.disabled = runIsActive || !editing;
   cancelFileEditButton.textContent = manualCancelArmed ? "确认放弃" : "取消";
-  newFileButton.disabled = runIsActive || !project || editing;
+  newFileButton.disabled = runIsActive || !project || editing || pendingFilePath !== null;
 }
 
 function canLeaveManualEditor(action: string): boolean {
@@ -1149,6 +1173,7 @@ function showDiff(change: ChangedFileSnapshot): void {
   if (!canLeaveManualEditor("查看 Agent Diff")) {
     return;
   }
+  cancelPendingFileOpen();
   selectedFile = change.relativePath;
   hideCodeSelectionToolbar();
   currentFile = null;
@@ -1271,6 +1296,7 @@ function diffColumn(label: string, content: string): HTMLElement {
 }
 
 function showProjectWelcome(): void {
+  cancelPendingFileOpen();
   hideCodeSelectionToolbar();
   currentFile = null;
   activeDiffPath = null;
@@ -2368,9 +2394,15 @@ function buildOutcomeCard(
       outcome.testCount !== undefined
         ? `${outcome.testCount} 项测试通过`
         : outcome.commandCalls > 0
-          ? `${outcome.commandCalls} 条命令已执行`
+          ? `${outcome.commandCalls} 条命令已执行${outcome.rejectedCommandCalls > 0 ? ` · ${outcome.rejectedCommandCalls} 条未获批准` : ""}`
+          : outcome.rejectedCommandCalls > 0
+            ? `${outcome.rejectedCommandCalls} 条命令未获批准`
           : "未执行命令",
-      outcome.testCount !== undefined ? "success" : "neutral",
+      outcome.rejectedCommandCalls > 0
+        ? "warning"
+        : outcome.testCount !== undefined
+          ? "success"
+          : "neutral",
     ),
     outcomeMetric(
       "工具调用",
@@ -3238,6 +3270,7 @@ function toolLabel(name: string): string {
     search_text: "搜索代码",
     read_file: "读取文件",
     replace_in_file: "修改文件",
+    edit_file_lines: "按行修改文件",
     write_file: "写入文件",
     run_command: "运行命令",
     propose_plan: "提交执行计划",
@@ -3642,7 +3675,7 @@ function renderHistoryDetail(detail: RunHistoryDetail): void {
   });
   const plan = renderHistoryPlan(detail.plan);
   const outcome = buildOutcomeCard(
-    detail.outcome ?? fallbackHistoryOutcome(detail),
+    historyOutcome(detail),
     "任务成果概览",
     false,
   );
@@ -3683,6 +3716,26 @@ function fallbackHistoryOutcome(detail: RunHistoryDetail): RunOutcomeMetrics {
     changedFileCount: detail.changedFiles.length,
     lineStatsEstimated: detail.changedFiles.length > 0,
   };
+}
+
+function historyOutcome(detail: RunHistoryDetail): RunOutcomeMetrics {
+  const fallback = fallbackHistoryOutcome(detail);
+  if (!detail.outcome) {
+    return fallback;
+  }
+  const hasCommandEvidence = detail.events.some(
+    (event) => event.type === "tool_finished" && event.name === "run_command",
+  );
+  return hasCommandEvidence
+    ? {
+        ...detail.outcome,
+        commandCalls: fallback.commandCalls,
+        rejectedCommandCalls: fallback.rejectedCommandCalls,
+      }
+    : {
+        ...detail.outcome,
+        rejectedCommandCalls: detail.outcome.rejectedCommandCalls ?? 0,
+      };
 }
 
 function startHistoryReplay(

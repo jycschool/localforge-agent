@@ -9,6 +9,7 @@ import type {
   ToolResult,
 } from "../core/protocol";
 import { ToolRegistry } from "./toolRegistry";
+import { toolErrorResult } from "./toolErrors";
 
 export interface AgentRunOptions {
   task: string;
@@ -21,6 +22,7 @@ export interface AgentRunOptions {
   requestCommandApproval(request: CommandApprovalRequest): Promise<boolean>;
   requestPlanApproval?(request: PlanApprovalRequest): Promise<PlanApprovalDecision>;
   validateCompletion?(): string | undefined;
+  completeWhenGatePassesAfterTools?: boolean;
 }
 
 export interface AgentRunResult {
@@ -44,6 +46,8 @@ export class AgentLoop {
     ];
     let steps = 0;
     let repeatedFailure: ToolFailureState | undefined;
+    const progressGuard = new ToolProgressGuard();
+    let budgetWarningSent = false;
     const cumulativeUsage: TokenUsage = {
       promptTokens: 0,
       completionTokens: 0,
@@ -55,6 +59,15 @@ export class AgentLoop {
     try {
       for (steps = 1; steps <= options.maxSteps; steps += 1) {
         throwIfAborted(options.signal);
+        const remainingSteps = options.maxSteps - steps + 1;
+        if (!budgetWarningSent && options.maxSteps > 3 && remainingSteps === 3) {
+          budgetWarningSent = true;
+          messages.push({
+            role: "system",
+            content:
+              "Only three model steps remain in this run. Prioritize unresolved requirements, use the smallest decisive tool calls, perform the most relevant verification, and finish honestly. Do not start unrelated exploration.",
+          });
+        }
         options.onEvent({ type: "model_started", step: steps });
         const assistant = await this.model.complete(
           messages,
@@ -102,6 +115,7 @@ export class AgentLoop {
           options.onEvent({ type: "assistant_message", text: assistant.content.trim() });
         }
 
+        let progressDecisionForStep: ProgressDecision = "continue";
         for (const call of calls) {
           throwIfAborted(options.signal);
           const startedAt = Date.now();
@@ -111,10 +125,11 @@ export class AgentLoop {
             argumentsValue = parseArguments(call.function.arguments);
           } catch (error) {
             argumentsValue = {};
-            result = {
-              content: JSON.stringify({ error: errorMessage(error) }),
-              isError: true,
-            };
+            result = toolErrorResult(error, {
+              code: "INVALID_TOOL_ARGUMENTS_JSON",
+              retryable: true,
+              suggestion: "Regenerate one JSON object that exactly follows the selected tool schema.",
+            });
             options.onEvent({
               type: "tool_started",
               id: call.id,
@@ -150,6 +165,19 @@ export class AgentLoop {
             durationMs: Date.now() - startedAt,
           });
 
+          const progressDecision = progressGuard.record(
+            call.function.name,
+            argumentsValue,
+            result,
+          );
+          if (progressDecision === "warn") {
+            if (progressDecisionForStep !== "stop") {
+              progressDecisionForStep = "warn";
+            }
+          } else if (progressDecision === "stop") {
+            progressDecisionForStep = "stop";
+          }
+
           if (result.isError) {
             const signature = toolFailureSignature(
               call.function.name,
@@ -179,12 +207,28 @@ export class AgentLoop {
           }
         }
 
-        const completionIssue = options.validateCompletion?.();
-        if (options.validateCompletion && !completionIssue) {
+        if (progressDecisionForStep === "stop") {
           const summary =
-            assistant.content?.trim() || "计划已完成，所有完成门禁均已通过。";
-          options.onEvent({ type: "run_completed", summary, steps });
-          return { status: "completed", summary, steps, messages };
+            "工具调用已经两次进入无进展循环。已停止任务，避免继续重复读取、搜索或失败编辑；请检查目标路径、工具参数或改用其他策略后继续。";
+          options.onEvent({ type: "run_failed", message: summary, steps });
+          return { status: "failed", summary, steps, messages };
+        }
+        if (progressDecisionForStep === "warn") {
+          messages.push({
+            role: "system",
+            content:
+              "Recent tool calls are repeating without observable progress. Reassess the target and the structured error details, then choose a materially different action. Do not repeat reads, searches, or failing edits that produced no new evidence.",
+          });
+        }
+
+        if (options.completeWhenGatePassesAfterTools && options.validateCompletion) {
+          const completionIssue = options.validateCompletion();
+          if (!completionIssue) {
+            const summary =
+              assistant.content?.trim() || "计划已完成，所有完成门禁均已通过。";
+            options.onEvent({ type: "run_completed", summary, steps });
+            return { status: "completed", summary, steps, messages };
+          }
         }
       }
 
@@ -290,4 +334,88 @@ function toolErrorMessage(content: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type ProgressDecision = "continue" | "warn" | "stop";
+
+interface ToolActionObservation {
+  fingerprint: string;
+  errorFamily?: string;
+}
+
+class ToolProgressGuard {
+  private observations: ToolActionObservation[] = [];
+  private recoveryWarnings = 0;
+
+  public record(
+    name: string,
+    argumentsValue: Record<string, unknown>,
+    result: ToolResult,
+  ): ProgressDecision {
+    if (isProgressAction(name, result)) {
+      this.observations = [];
+      this.recoveryWarnings = 0;
+      return "continue";
+    }
+    const observation = {
+      fingerprint: JSON.stringify([
+        name,
+        stableJson(argumentsValue),
+        result.isError ? "error" : contentFingerprint(result.content),
+      ]),
+      errorFamily: result.isError ? `${name}:${toolErrorCode(result.content)}` : undefined,
+    };
+    this.observations.push(observation);
+    this.observations = this.observations.slice(-8);
+
+    const exactRepeats = this.observations.filter(
+      (item) => item.fingerprint === observation.fingerprint,
+    ).length;
+    const familyRepeats = observation.errorFamily
+      ? this.observations.filter((item) => item.errorFamily === observation.errorFamily).length
+      : 0;
+    if (exactRepeats < 3 && familyRepeats < 3) {
+      return "continue";
+    }
+
+    this.observations = [];
+    this.recoveryWarnings += 1;
+    return this.recoveryWarnings >= 2 ? "stop" : "warn";
+  }
+}
+
+function isProgressAction(name: string, result: ToolResult): boolean {
+  return !result.isError && [
+    "replace_in_file",
+    "edit_file_lines",
+    "write_file",
+    "run_command",
+    "propose_plan",
+    "update_plan",
+    "finish_task",
+  ].includes(name);
+}
+
+function toolErrorCode(content: string): string {
+  try {
+    const value: unknown = JSON.parse(content);
+    if (isRecord(value) && typeof value.code === "string" && value.code.trim()) {
+      return value.code.trim();
+    }
+    if (isRecord(value) && typeof value.error === "string" && value.error.trim()) {
+      return value.error.trim().slice(0, 120);
+    }
+  } catch {
+    // Use the compact raw content below.
+  }
+  return content.replace(/\s+/g, " ").trim().slice(0, 120) || "UNKNOWN_TOOL_ERROR";
+}
+
+function contentFingerprint(value: string): string {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(16);
 }

@@ -27,6 +27,7 @@ describe("run evidence report", () => {
         lineStatsEstimated: false,
         toolCalls: 2,
         commandCalls: 1,
+        rejectedCommandCalls: 0,
         successfulToolCalls: 2,
         failedToolCalls: 0,
         toolDurationMs: 50,
@@ -55,6 +56,7 @@ describe("run evidence report", () => {
     expect(report).toContain("qwen-test");
     expect(report).toContain("25 Token");
     expect(report).toContain("8 项通过");
+    expect(report).toContain("命令：执行 1 次，拒绝 0 次");
     expect(report).toContain("+3 / -1 行");
     expect(report).toContain("src/login.ts");
     expect(report).toContain("执行模式：先规划");

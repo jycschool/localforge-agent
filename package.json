@@ -13,6 +13,7 @@
     "dev": "node esbuild.mjs --watch",
     "check": "tsc --noEmit",
     "test": "vitest run --dir tests",
+    "test:desktop": "vitest run tests/rendererContracts.test.ts tests/panelResizing.test.ts tests/fileIcons.test.ts tests/manualEditor.test.ts tests/quickOpen.test.ts tests/runEvidence.test.ts tests/runOutcome.test.ts tests/latestRequest.test.ts tests/projectService.test.ts",
     "verify": "pnpm run check && pnpm test && pnpm run build",
     "verify:delivery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-delivery.ps1",
     "shortcut:create": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",

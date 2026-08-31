@@ -211,6 +211,7 @@ export interface RunOutcomeMetrics {
   lineStatsEstimated: boolean;
   toolCalls: number;
   commandCalls: number;
+  rejectedCommandCalls: number;
   successfulToolCalls: number;
   failedToolCalls: number;
   toolDurationMs: number;

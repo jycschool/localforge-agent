@@ -673,6 +673,24 @@ textarea:focus-visible {
   box-shadow: inset 2px 0 #91a4f4;
 }
 
+.tree-file.loading::after {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  margin-left: auto;
+  border: 1.5px solid rgba(151, 164, 222, 0.28);
+  border-top-color: #aab8ff;
+  border-radius: 50%;
+  content: "";
+  animation: tree-file-loading 650ms linear infinite;
+}
+
+@keyframes tree-file-loading {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .file-icon {
   display: inline-grid;
   flex: 0 0 18px;
@@ -2152,7 +2170,7 @@ textarea:focus-visible {
 
 .context-actions {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   width: 100%;
 }
@@ -3500,8 +3518,8 @@ textarea:focus-visible {
 
 .toast {
   position: fixed;
+  top: 76px;
   right: 18px;
-  bottom: 18px;
   z-index: 20;
   max-width: 420px;
   padding: 10px 13px;
@@ -3729,6 +3747,10 @@ textarea:focus-visible {
   .validation-progress,
   .command-card,
   .command-card.running .command-state-mark {
+    animation: none;
+  }
+
+  .tree-file.loading::after {
     animation: none;
   }
 }

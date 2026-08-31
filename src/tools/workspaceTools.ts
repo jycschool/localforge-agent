@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import {
   access,
@@ -17,6 +18,7 @@ import type {
   ToolResult,
 } from "../core/protocol";
 import { ChangeTracker } from "../agent/changeTracker";
+import { ToolExecutionError } from "../agent/toolErrors";
 
 export interface WorkspaceToolOptions {
   rootPath: string;
@@ -55,6 +57,7 @@ export async function createWorkspaceTools(options: WorkspaceToolOptions): Promi
     createSearchTextTool(resolver, options.maxOutputChars),
     createReadFileTool(resolver, options.maxOutputChars),
     createReplaceFileTool(resolver, options.changeTracker),
+    createEditFileLinesTool(resolver, options.changeTracker),
     createWriteFileTool(resolver, options.changeTracker),
     createRunCommandTool(rootRealPath, options.commandTimeoutMs, options.maxOutputChars),
   ];
@@ -70,9 +73,25 @@ class WorkspacePathResolver {
 
   public async existing(relativePath: string): Promise<{ absolutePath: string; relativePath: string }> {
     const candidate = this.lexical(relativePath);
-    const candidateRealPath = await realpath(candidate.absolutePath);
+    let candidateRealPath: string;
+    try {
+      candidateRealPath = await realpath(candidate.absolutePath);
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        throw new ToolExecutionError(`Workspace file does not exist: ${candidate.relativePath}`, {
+          code: "FILE_NOT_FOUND",
+          retryable: true,
+          suggestion: "Use list_files or search_text to locate the current project-relative path.",
+          details: { path: candidate.relativePath },
+        });
+      }
+      throw error;
+    }
     if (!isPathInside(this.rootRealPath, candidateRealPath)) {
-      throw new Error(`Path resolves outside the workspace: ${relativePath}`);
+      throw new ToolExecutionError(`Path resolves outside the workspace: ${relativePath}`, {
+        code: "PATH_OUTSIDE_WORKSPACE",
+        retryable: false,
+      });
     }
     return { absolutePath: candidateRealPath, relativePath: candidate.relativePath };
   }
@@ -82,7 +101,10 @@ class WorkspacePathResolver {
     try {
       const candidateRealPath = await realpath(candidate.absolutePath);
       if (!isPathInside(this.rootRealPath, candidateRealPath)) {
-        throw new Error(`Path resolves outside the workspace: ${relativePath}`);
+        throw new ToolExecutionError(`Path resolves outside the workspace: ${relativePath}`, {
+          code: "PATH_OUTSIDE_WORKSPACE",
+          retryable: false,
+        });
       }
       return { absolutePath: candidateRealPath, relativePath: candidate.relativePath };
     } catch (error) {
@@ -93,7 +115,10 @@ class WorkspacePathResolver {
     const parent = await nearestExistingParent(path.dirname(candidate.absolutePath));
     const parentRealPath = await realpath(parent);
     if (!isPathInside(this.rootRealPath, parentRealPath)) {
-      throw new Error(`Path resolves outside the workspace: ${relativePath}`);
+      throw new ToolExecutionError(`Path resolves outside the workspace: ${relativePath}`, {
+        code: "PATH_OUTSIDE_WORKSPACE",
+        retryable: false,
+      });
     }
     return candidate;
   }
@@ -104,14 +129,25 @@ class WorkspacePathResolver {
 
   private lexical(relativePath: string): { absolutePath: string; relativePath: string } {
     if (!relativePath.trim()) {
-      throw new Error("A non-empty workspace-relative path is required.");
+      throw new ToolExecutionError("A non-empty workspace-relative path is required.", {
+        code: "INVALID_TOOL_ARGUMENT",
+        retryable: true,
+        suggestion: "Supply a path returned by list_files or search_text.",
+      });
     }
     if (path.isAbsolute(relativePath)) {
-      throw new Error("Absolute paths are not allowed.");
+      throw new ToolExecutionError("Absolute paths are not allowed.", {
+        code: "ABSOLUTE_PATH_NOT_ALLOWED",
+        retryable: true,
+        suggestion: "Use a project-relative path such as src/main.ts.",
+      });
     }
     const absolutePath = path.resolve(this.rootRealPath, relativePath);
     if (!isPathInside(this.rootRealPath, absolutePath)) {
-      throw new Error(`Path is outside the workspace: ${relativePath}`);
+      throw new ToolExecutionError(`Path is outside the workspace: ${relativePath}`, {
+        code: "PATH_OUTSIDE_WORKSPACE",
+        retryable: false,
+      });
     }
     return {
       absolutePath,
@@ -240,7 +276,14 @@ function createReadFileTool(resolver: WorkspacePathResolver, maxOutputChars: num
         .map((line, index) => `${startLine + index}: ${line}`)
         .join("\n");
       return textResult(
-        { path: target.relativePath, startLine, endLine: Math.min(endLine, lines.length), content: selected },
+        {
+          path: target.relativePath,
+          startLine,
+          endLine: Math.min(endLine, lines.length),
+          totalLines: lines.length,
+          hash: hashText(content),
+          content: selected,
+        },
         maxOutputChars,
       );
     },
@@ -271,16 +314,139 @@ function createReplaceFileTool(resolver: WorkspacePathResolver, tracker: ChangeT
       const oldText = requiredString(argumentsValue, "oldText", true);
       const newText = requiredString(argumentsValue, "newText", true);
       if (oldText.length === 0) {
-        throw new Error("oldText cannot be empty.");
+        throw new ToolExecutionError("oldText cannot be empty.", {
+          code: "INVALID_TOOL_ARGUMENT",
+          retryable: true,
+          suggestion: "Read the relevant file section and provide a non-empty exact oldText value.",
+        });
       }
       const current = await readUtf8FileWithinLimit(target.absolutePath);
       const occurrences = current.split(oldText).length - 1;
       if (occurrences !== 1) {
-        throw new Error(`Expected oldText exactly once, found ${occurrences} occurrences.`);
+        throw new ToolExecutionError(
+          `Expected oldText exactly once, found ${occurrences} occurrences.`,
+          {
+            code: occurrences === 0 ? "REPLACE_TEXT_NOT_FOUND" : "REPLACE_MATCH_NOT_UNIQUE",
+            retryable: true,
+            suggestion: occurrences === 0
+              ? "Read the latest relevant lines and copy the exact current text before retrying."
+              : "Use a longer surrounding oldText value or edit_file_lines with the latest file hash.",
+            details: { path: target.relativePath, matchCount: occurrences },
+          },
+        );
+      }
+      const updated = current.replace(oldText, newText);
+      tracker.capture(target.relativePath, current);
+      await writeFile(target.absolutePath, updated, "utf8");
+      return {
+        content: JSON.stringify({
+          path: target.relativePath,
+          replacements: 1,
+          beforeHash: hashText(current),
+          afterHash: hashText(updated),
+        }),
+      };
+    },
+  };
+}
+
+function createEditFileLinesTool(resolver: WorkspacePathResolver, tracker: ChangeTracker): AgentTool {
+  return {
+    schema: {
+      type: "function",
+      function: {
+        name: "edit_file_lines",
+        description:
+          "按 1 起始的行范围安全替换已有 UTF-8 文件的一段内容。必须传入最近一次 read_file 返回的完整文件 hash；适合精确文本替换不稳定时的小范围编辑。",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string", minLength: 1, description: "已有文件的项目相对路径。" },
+            startLine: { type: "integer", minimum: 1, description: "要替换的起始行，包含该行。" },
+            endLine: { type: "integer", minimum: 1, description: "要替换的结束行，包含该行。" },
+            expectedHash: {
+              type: "string",
+              minLength: 64,
+              maxLength: 64,
+              description: "最近一次 read_file 返回的完整文件 SHA-256 hash。",
+            },
+            replacement: {
+              type: "string",
+              description: "替换范围的新文本；空字符串表示删除这些行。",
+            },
+          },
+          required: ["path", "startLine", "endLine", "expectedHash", "replacement"],
+          additionalProperties: false,
+        },
+      },
+    },
+    async execute(argumentsValue) {
+      const target = await resolver.existing(requiredString(argumentsValue, "path"));
+      const startLine = requiredInteger(argumentsValue, "startLine", 1);
+      const endLine = requiredInteger(argumentsValue, "endLine", 1);
+      const expectedHash = requiredString(argumentsValue, "expectedHash");
+      const replacement = requiredString(argumentsValue, "replacement", true);
+      if (!/^[a-f0-9]{64}$/i.test(expectedHash)) {
+        throw new ToolExecutionError("expectedHash must be a 64-character SHA-256 value.", {
+          code: "INVALID_TOOL_ARGUMENT",
+          retryable: true,
+          suggestion: "Call read_file for the target file and reuse its returned hash.",
+        });
+      }
+      if (endLine < startLine) {
+        throw new ToolExecutionError("endLine must be greater than or equal to startLine.", {
+          code: "INVALID_LINE_RANGE",
+          retryable: true,
+          suggestion: "Use a line range from the latest numbered read_file output.",
+        });
+      }
+      const current = await readUtf8FileWithinLimit(target.absolutePath);
+      const beforeHash = hashText(current);
+      if (beforeHash !== expectedHash.toLowerCase()) {
+        throw new ToolExecutionError("The file changed after it was read; the supplied hash is stale.", {
+          code: "STALE_FILE_CONTENT",
+          retryable: true,
+          suggestion: "Read the file again, review the latest lines, and retry with the new hash.",
+          details: { path: target.relativePath, currentHash: beforeHash },
+        });
+      }
+      const lineEnding = current.includes("\r\n") ? "\r\n" : "\n";
+      const lines = current.split(/\r\n|\n/);
+      if (startLine > lines.length || endLine > lines.length) {
+        throw new ToolExecutionError(
+          `Line range ${startLine}-${endLine} exceeds the file's ${lines.length} lines.`,
+          {
+            code: "INVALID_LINE_RANGE",
+            retryable: true,
+            suggestion: "Use line numbers from the latest read_file result.",
+            details: { path: target.relativePath, totalLines: lines.length },
+          },
+        );
+      }
+      const replacementLines = replacement.length === 0
+        ? []
+        : replacement.replace(/\r\n|\r|\n/g, "\n").split("\n");
+      lines.splice(startLine - 1, endLine - startLine + 1, ...replacementLines);
+      const updated = lines.join(lineEnding);
+      if (Buffer.byteLength(updated, "utf8") > MAX_TOOL_FILE_BYTES) {
+        throw new ToolExecutionError("Edited file exceeds the 1 MB workspace tool limit.", {
+          code: "FILE_TOO_LARGE",
+          retryable: true,
+          suggestion: "Reduce the replacement size or split the content into a more appropriate file.",
+        });
       }
       tracker.capture(target.relativePath, current);
-      await writeFile(target.absolutePath, current.replace(oldText, newText), "utf8");
-      return { content: JSON.stringify({ path: target.relativePath, replacements: 1 }) };
+      await writeFile(target.absolutePath, updated, "utf8");
+      return {
+        content: JSON.stringify({
+          path: target.relativePath,
+          startLine,
+          endLine,
+          insertedLines: replacementLines.length,
+          beforeHash,
+          afterHash: hashText(updated),
+        }),
+      };
     },
   };
 }
@@ -307,7 +473,11 @@ function createWriteFileTool(resolver: WorkspacePathResolver, tracker: ChangeTra
       const target = await resolver.writable(requiredString(argumentsValue, "path"));
       const content = requiredString(argumentsValue, "content", true);
       if (Buffer.byteLength(content, "utf8") > MAX_TOOL_FILE_BYTES) {
-        throw new Error("File content exceeds the 1 MB workspace tool limit.");
+        throw new ToolExecutionError("File content exceeds the 1 MB workspace tool limit.", {
+          code: "FILE_TOO_LARGE",
+          retryable: true,
+          suggestion: "Reduce the file size or split the content into smaller files.",
+        });
       }
       let original: string | null = null;
       try {
@@ -321,7 +491,13 @@ function createWriteFileTool(resolver: WorkspacePathResolver, tracker: ChangeTra
       await mkdir(path.dirname(target.absolutePath), { recursive: true });
       await writeFile(target.absolutePath, content, "utf8");
       return {
-        content: JSON.stringify({ path: target.relativePath, created: original === null, characters: content.length }),
+        content: JSON.stringify({
+          path: target.relativePath,
+          created: original === null,
+          characters: content.length,
+          beforeHash: original === null ? null : hashText(original),
+          afterHash: hashText(content),
+        }),
       };
     },
   };
@@ -363,6 +539,9 @@ function createRunCommandTool(rootPath: string, timeoutMs: number, maxOutputChar
             approved: false,
             approvalDurationMs,
             error: "User rejected the command.",
+            code: "COMMAND_REJECTED",
+            retryable: false,
+            suggestion: "Do not retry the same command. Continue without it or explain what remains unverified.",
           }),
           isError: true,
         };
@@ -460,6 +639,7 @@ async function runCommand(
         reject(new DOMException("The command was aborted.", "AbortError"));
         return;
       }
+      const isError = timedOut || exitCode !== 0;
       resolve({
         content: JSON.stringify({
           approved: true,
@@ -472,8 +652,20 @@ async function runCommand(
           outputTruncated: stdoutTruncated || stderrTruncated,
           approvalDurationMs,
           executionDurationMs: Date.now() - executionStartedAt,
+          ...(isError
+            ? {
+                error: timedOut
+                  ? `Command timed out after ${timeoutMs} ms.`
+                  : `Command exited with code ${exitCode}.`,
+                code: timedOut ? "COMMAND_TIMEOUT" : "COMMAND_FAILED",
+                retryable: true,
+                suggestion: timedOut
+                  ? "Choose a bounded non-interactive command or increase the configured timeout if justified."
+                  : "Inspect stdout and stderr, fix the reported cause, then run the smallest relevant verification again.",
+              }
+            : {}),
         }),
-        isError: timedOut || exitCode !== 0,
+        isError,
       });
     });
 
@@ -577,10 +769,18 @@ function throwIfAborted(signal: AbortSignal): void {
 async function readUtf8FileWithinLimit(absolutePath: string): Promise<string> {
   const info = await stat(absolutePath);
   if (!info.isFile()) {
-    throw new Error("The workspace path is not a file.");
+    throw new ToolExecutionError("The workspace path is not a file.", {
+      code: "PATH_NOT_FILE",
+      retryable: true,
+      suggestion: "Choose a regular file path returned by list_files.",
+    });
   }
   if (info.size > MAX_TOOL_FILE_BYTES) {
-    throw new Error("File exceeds the 1 MB workspace tool limit.");
+    throw new ToolExecutionError("File exceeds the 1 MB workspace tool limit.", {
+      code: "FILE_TOO_LARGE",
+      retryable: false,
+      details: { bytes: info.size, limitBytes: MAX_TOOL_FILE_BYTES },
+    });
   }
   return readFile(absolutePath, "utf8");
 }
@@ -636,9 +836,36 @@ function requiredString(
 ): string {
   const result = value[key];
   if (typeof result !== "string" || (!allowEmpty && !result.trim())) {
-    throw new Error(`${key} must be ${allowEmpty ? "a string" : "a non-empty string"}.`);
+    throw new ToolExecutionError(
+      `${key} must be ${allowEmpty ? "a string" : "a non-empty string"}.`,
+      {
+        code: "INVALID_TOOL_ARGUMENT",
+        retryable: true,
+        suggestion: `Correct the ${key} argument using the current tool schema.`,
+      },
+    );
   }
   return result;
+}
+
+function requiredInteger(
+  value: Record<string, unknown>,
+  key: string,
+  minimum: number,
+): number {
+  const result = value[key];
+  if (!Number.isInteger(result) || (result as number) < minimum) {
+    throw new ToolExecutionError(`${key} must be an integer greater than or equal to ${minimum}.`, {
+      code: "INVALID_TOOL_ARGUMENT",
+      retryable: true,
+      suggestion: `Correct the ${key} argument using the latest file metadata.`,
+    });
+  }
+  return result as number;
+}
+
+function hashText(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
 function optionalString(value: Record<string, unknown>, key: string): string | undefined {

@@ -9,6 +9,7 @@ export function summarizeRunOutcome(
 ): RunOutcomeMetrics {
   let toolCalls = 0;
   let commandCalls = 0;
+  let rejectedCommandCalls = 0;
   let successfulToolCalls = 0;
   let failedToolCalls = 0;
   let toolDurationMs = 0;
@@ -18,13 +19,18 @@ export function summarizeRunOutcome(
   for (const event of events) {
     if (event.type === "tool_started") {
       toolCalls += 1;
-      if (event.name === "run_command") {
-        commandCalls += 1;
-      }
       continue;
     }
     if (event.type === "tool_finished") {
       toolDurationMs += Math.max(0, event.durationMs);
+      if (event.name === "run_command") {
+        const approval = commandApprovalState(event.result.content);
+        if (approval === true) {
+          commandCalls += 1;
+        } else if (approval === false) {
+          rejectedCommandCalls += 1;
+        }
+      }
       if (event.result.isError) {
         failedToolCalls += 1;
       } else {
@@ -65,12 +71,22 @@ export function summarizeRunOutcome(
     lineStatsEstimated,
     toolCalls,
     commandCalls,
+    rejectedCommandCalls,
     successfulToolCalls,
     failedToolCalls,
     toolDurationMs,
     testCount,
     tokenUsage,
   };
+}
+
+export function commandApprovalState(raw: string): boolean | undefined {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return typeof parsed.approved === "boolean" ? parsed.approved : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function changedLineCounts(

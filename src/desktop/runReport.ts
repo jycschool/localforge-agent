@@ -33,7 +33,7 @@ export function formatRunReport(projectName: string, run: RunHistoryDetail): str
     ? [
         `- 变更：${run.outcome.changedFileCount} 个文件，${run.outcome.lineStatsEstimated ? "约 " : ""}+${run.outcome.additions} / -${run.outcome.deletions} 行`,
         `- 工具：${run.outcome.toolCalls} 次调用，${run.outcome.failedToolCalls} 次失败`,
-        `- 命令：${run.outcome.commandCalls} 次`,
+        `- 命令：执行 ${run.outcome.commandCalls} 次，拒绝 ${run.outcome.rejectedCommandCalls ?? 0} 次`,
         `- 测试：${run.outcome.testCount === undefined ? "未从命令输出识别数量" : `${run.outcome.testCount} 项通过`}`,
         `- Token：${run.outcome.tokenUsage ? `${run.outcome.tokenUsage.estimated ? "约 " : ""}${run.outcome.tokenUsage.totalTokens}` : "未记录"}`,
       ].join("\n")

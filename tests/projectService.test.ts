@@ -24,9 +24,11 @@ describe("desktop project service", () => {
     await mkdir(path.join(rootPath, "src"), { recursive: true });
     await mkdir(path.join(rootPath, "node_modules", "package"), { recursive: true });
     await mkdir(path.join(rootPath, ".venv", "Lib"), { recursive: true });
+    await mkdir(path.join(rootPath, "out", "production"), { recursive: true });
     await writeFile(path.join(rootPath, "src", "app.ts"), "export const value = 1;\n");
     await writeFile(path.join(rootPath, "node_modules", "package", "index.js"), "ignored");
     await writeFile(path.join(rootPath, ".venv", "Lib", "module.py"), "ignored");
+    await writeFile(path.join(rootPath, "out", "production", "Main.class"), "ignored");
 
     const project = await scanProject(rootPath);
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { AgentLoop, type AgentRunResult } from "./agent/agentLoop";
 import { ChangeTracker } from "./agent/changeTracker";
 import { collectTrackedChanges, restoreTrackedChanges } from "./agent/changeRestore";
+import { DirectCompletionPolicy } from "./agent/completionPolicy";
 import { toolsForPermission } from "./agent/permissions";
 import { PlanController } from "./agent/planController";
 import { buildSystemPrompt } from "./agent/systemPrompt";
@@ -483,7 +484,10 @@ export function registerIpc(
     activeController = controller;
     activeRunId = runId;
     const runEvents: AgentEvent[] = [];
+    const directCompletionPolicy =
+      request.executionMode === "plan" ? null : new DirectCompletionPolicy();
     const recordAndSendEvent = (event: AgentEvent): void => {
+      directCompletionPolicy?.observe(event);
       // Streaming deltas are transient UI events. The complete assistant message is
       // persisted later, so retaining every token would only inflate run history.
       if (event.type !== "assistant_delta") {
@@ -529,7 +533,8 @@ export function registerIpc(
           requestPlanApproval,
           validateCompletion: planController
             ? () => planController.completionIssue()
-            : undefined,
+            : () => directCompletionPolicy?.completionIssue(),
+          completeWhenGatePassesAfterTools: Boolean(planController),
         });
         const changes = await collectChangesSafely(rootPath);
         await historyStore.finishRun(rootPath, runId, {

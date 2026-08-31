@@ -8,6 +8,7 @@ describe("agent permission modes", () => {
     namedTool("search_text"),
     namedTool("read_file"),
     namedTool("replace_in_file"),
+    namedTool("edit_file_lines"),
     namedTool("write_file"),
     namedTool("run_command"),
   ];

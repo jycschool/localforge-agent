@@ -377,6 +377,7 @@ function sanitizeOutcome(outcome: RunOutcomeMetrics): RunOutcomeMetrics {
     lineStatsEstimated: outcome.lineStatsEstimated === true,
     toolCalls: whole(outcome.toolCalls),
     commandCalls: whole(outcome.commandCalls),
+    rejectedCommandCalls: whole(outcome.rejectedCommandCalls ?? 0),
     successfulToolCalls: whole(outcome.successfulToolCalls),
     failedToolCalls: whole(outcome.failedToolCalls),
     toolDurationMs: whole(outcome.toolDurationMs),

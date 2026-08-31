@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   changedLineCounts,
+  commandApprovalState,
   detectPassedTestCount,
   replayFrameDelay,
   summarizeRunOutcome,
@@ -16,7 +17,7 @@ describe("run outcome presentation", () => {
         type: "tool_finished",
         id: "test",
         name: "run_command",
-        result: { content: JSON.stringify({ stdout: "Tests  130 passed", stderr: "" }) },
+        result: { content: JSON.stringify({ approved: true, stdout: "Tests  130 passed", stderr: "" }) },
         durationMs: 96,
       },
       { type: "model_usage", step: 2, promptTokens: 100, completionTokens: 20, totalTokens: 120, estimated: false },
@@ -33,12 +34,30 @@ describe("run outcome presentation", () => {
       deletions: 1,
       toolCalls: 2,
       commandCalls: 1,
+      rejectedCommandCalls: 0,
       successfulToolCalls: 2,
       failedToolCalls: 0,
       toolDurationMs: 100,
       testCount: 130,
       tokenUsage: { totalTokens: 120, estimated: false },
     });
+  });
+
+  it("separates rejected command requests from commands that actually ran", () => {
+    const outcome = summarizeRunOutcome([
+      { type: "tool_started", id: "reject", name: "run_command", arguments: { command: "pnpm test" } },
+      {
+        type: "tool_finished",
+        id: "reject",
+        name: "run_command",
+        result: { content: JSON.stringify({ approved: false, error: "User rejected the command." }), isError: true },
+        durationMs: 8,
+      },
+    ], []);
+
+    expect(outcome.commandCalls).toBe(0);
+    expect(outcome.rejectedCommandCalls).toBe(1);
+    expect(commandApprovalState("not json")).toBeUndefined();
   });
 
   it("handles test output variants and keeps replay near six seconds", () => {

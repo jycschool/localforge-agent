@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentLoop } from "../src/agent/agentLoop";
+import { DirectCompletionPolicy } from "../src/agent/completionPolicy";
 import { ToolRegistry } from "../src/agent/toolRegistry";
 import type {
   AgentEvent,
@@ -127,6 +128,55 @@ describe("AgentLoop", () => {
     expect(result.messages).toContainEqual({
       role: "system",
       content: expect.stringContaining("The task cannot finish yet"),
+    });
+  });
+
+  it("checks a direct completion gate only when the model tries to finish", async () => {
+    const policy = new DirectCompletionPolicy();
+    const writeTool: AgentTool = {
+      schema: {
+        type: "function",
+        function: {
+          name: "write_file",
+          description: "Write a file.",
+          parameters: { type: "object", properties: { path: { type: "string" } } },
+        },
+      },
+      async execute() {
+        return { content: JSON.stringify({ path: "src/app.ts" }) };
+      },
+    };
+    const model = new ScriptedModel([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "write-direct",
+            type: "function",
+            function: { name: "write_file", arguments: JSON.stringify({ path: "src/app.ts" }) },
+          },
+        ],
+      },
+      { role: "assistant", content: "修改完成。" },
+      { role: "assistant", content: "已说明仍未验证。" },
+    ]);
+    const events: AgentEvent[] = [];
+    const result = await new AgentLoop(model, new ToolRegistry([writeTool])).run({
+      ...defaultOptions(events),
+      onEvent: (event) => {
+        policy.observe(event);
+        events.push(event);
+      },
+      validateCompletion: () => policy.completionIssue(),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.steps).toBe(3);
+    expect(events).toContainEqual({
+      type: "completion_blocked",
+      step: 2,
+      message: expect.stringContaining("src/app.ts"),
     });
   });
 
@@ -269,6 +319,7 @@ describe("AgentLoop", () => {
       ...defaultOptions(events),
       maxSteps: 1,
       validateCompletion: () => (finished ? undefined : "计划尚未完成。"),
+      completeWhenGatePassesAfterTools: true,
     });
 
     expect(result.status).toBe("completed");
@@ -348,6 +399,84 @@ describe("AgentLoop", () => {
     expect(result.summary).toContain("path must be a non-empty string");
     expect(events.filter((event) => event.type === "tool_finished")).toHaveLength(3);
     expect(events.at(-1)).toMatchObject({ type: "run_failed", steps: 3 });
+  });
+
+  it("warns and then stops an alternating read loop with no observable progress", async () => {
+    const calls = Array.from({ length: 12 }, (_, index) => ({
+      role: "assistant" as const,
+      content: null,
+      tool_calls: [
+        {
+          id: `read-cycle-${index}`,
+          type: "function" as const,
+          function: {
+            name: "read_file",
+            arguments: JSON.stringify({ path: index % 2 === 0 ? "a.ts" : "b.ts" }),
+          },
+        },
+      ],
+    }));
+    const readTool: AgentTool = {
+      schema: {
+        type: "function",
+        function: {
+          name: "read_file",
+          description: "Read a file.",
+          parameters: { type: "object", properties: { path: { type: "string" } } },
+        },
+      },
+      async execute(argumentsValue) {
+        return { content: JSON.stringify({ path: argumentsValue.path, content: "same" }) };
+      },
+    };
+    const events: AgentEvent[] = [];
+    const result = await new AgentLoop(
+      new ScriptedModel(calls),
+      new ToolRegistry([readTool]),
+    ).run({ ...defaultOptions(events), maxSteps: 12 });
+
+    expect(result.status).toBe("failed");
+    expect(result.steps).toBe(10);
+    expect(result.summary).toContain("无进展循环");
+    expect(result.messages).toContainEqual({
+      role: "system",
+      content: expect.stringContaining("repeating without observable progress"),
+    });
+  });
+
+  it("adds a focused finishing instruction when only three model steps remain", async () => {
+    const received: Array<readonly ChatMessage[]> = [];
+    let call = 0;
+    const model: ModelClient = {
+      async complete(messages) {
+        received.push(structuredClone(messages));
+        call += 1;
+        return call === 1
+          ? {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "echo-before-budget",
+                  type: "function",
+                  function: { name: "echo", arguments: JSON.stringify({ value: "one" }) },
+                },
+              ],
+            }
+          : { role: "assistant", content: "Finished within the budget." };
+      },
+    };
+    const events: AgentEvent[] = [];
+    const result = await new AgentLoop(model, new ToolRegistry([echoTool])).run({
+      ...defaultOptions(events),
+      maxSteps: 4,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(received[1]).toContainEqual({
+      role: "system",
+      content: expect.stringContaining("Only three model steps remain"),
+    });
   });
 
   it("reports cancellation", async () => {

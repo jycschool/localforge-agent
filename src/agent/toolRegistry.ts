@@ -4,6 +4,7 @@ import type {
   ToolExecutionContext,
   ToolResult,
 } from "../core/protocol";
+import { toolErrorResult } from "./toolErrors";
 
 export class ToolRegistry {
   private readonly tools = new Map<string, AgentTool>();
@@ -34,13 +35,21 @@ export class ToolRegistry {
   ): Promise<ToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {
-      return { content: JSON.stringify({ error: `Unknown tool: ${name}` }), isError: true };
+      return toolErrorResult(new Error(`Unknown tool: ${name}`), {
+        code: "UNKNOWN_TOOL",
+        retryable: true,
+        suggestion: "Choose one of the tool schemas currently supplied by RepoForge.",
+      });
     }
     if (!(this.options.isToolEnabled?.(name) ?? true)) {
-      return {
-        content: JSON.stringify({ error: `Tool is not available in the current task phase: ${name}` }),
-        isError: true,
-      };
+      return toolErrorResult(
+        new Error(`Tool is not available in the current task phase: ${name}`),
+        {
+          code: "TOOL_DISABLED",
+          retryable: true,
+          suggestion: "Complete the required approval or planning phase before retrying this tool.",
+        },
+      );
     }
 
     try {
@@ -49,14 +58,7 @@ export class ToolRegistry {
       if (context.signal.aborted) {
         throw error;
       }
-      return {
-        content: JSON.stringify({ error: errorMessage(error) }),
-        isError: true,
-      };
+      return toolErrorResult(error);
     }
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

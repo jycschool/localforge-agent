@@ -81,6 +81,7 @@ describe("run history store", () => {
         lineStatsEstimated: false,
         toolCalls: 2,
         commandCalls: 1,
+        rejectedCommandCalls: 0,
         successfulToolCalls: 2,
         failedToolCalls: 0,
         toolDurationMs: 120,

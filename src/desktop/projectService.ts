@@ -14,6 +14,7 @@ const IGNORED_DIRECTORIES = new Set([
   "__pycache__",
   "build",
   "node_modules",
+  "out",
   "dist",
   "coverage",
   ".vscode-test",

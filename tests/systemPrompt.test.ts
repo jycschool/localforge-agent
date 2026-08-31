@@ -32,6 +32,9 @@ describe("system prompt context", () => {
     expect(prompt).toContain("Acknowledge them as attachments");
     expect(prompt).toContain("answer directly instead of exploring unrelated project files");
     expect(prompt).toContain("point them to the Token indicator");
+    expect(prompt).toContain("read the relevant current section during this run");
+    expect(prompt).toContain("reports limited results");
+    expect(prompt).toContain("identify whether the cause is the path");
   });
 
   it("states the enforced permission and response profile", () => {
