@@ -112,6 +112,8 @@ let activeApproval: CommandApprovalRequest | null = null;
 let activePlanApproval: PlanApprovalRequest | null = null;
 let planDraftItems: PlanDraftItem[] = [];
 let latestPlan: PlanSnapshot | null = null;
+let lastRenderedPlan: PlanSnapshot | null = null;
+let planCollapsed = false;
 let runHistory: RunHistorySummary[] = [];
 let projectContext: ProjectContextSnapshot = {
   skills: [],
@@ -281,6 +283,7 @@ const rejectCommandButton = element<HTMLButtonElement>("reject-command");
 const planPanel = element<HTMLElement>("plan-panel");
 const planTitle = element<HTMLElement>("plan-title");
 const planProgress = element<HTMLElement>("plan-progress");
+const planToggleButton = element<HTMLButtonElement>("plan-toggle");
 const planList = element<HTMLOListElement>("plan-list");
 const planEvidence = element<HTMLElement>("plan-evidence");
 const planApprovalPanel = element<HTMLElement>("plan-approval-dialog");
@@ -406,6 +409,7 @@ rejectCommandButton.addEventListener("click", (event) => void answerApproval(eve
 addPlanStepButton.addEventListener("click", addPlanStep);
 approvePlanButton.addEventListener("click", () => void answerPlanApproval(true));
 rejectPlanButton.addEventListener("click", () => void answerPlanApproval(false));
+planToggleButton.addEventListener("click", () => setPlanCollapsed(!planCollapsed));
 quickOpenInput.addEventListener("input", () => {
   quickOpenSelectionIndex = 0;
   renderQuickOpenResults();
@@ -3217,6 +3221,10 @@ async function answerPlanApproval(approved: boolean): Promise<void> {
 
 function renderPlan(plan: PlanSnapshot): void {
   planPanel.hidden = Boolean(activePlanApproval);
+  if (plan !== lastRenderedPlan && plan.state === "completed") {
+    setPlanCollapsed(true);
+  }
+  lastRenderedPlan = plan;
   planTitle.textContent = planStateLabel(plan.state);
   const finished = plan.items.filter(
     (item) => item.status === "completed" || item.status === "skipped",
@@ -3244,8 +3252,18 @@ function renderPlan(plan: PlanSnapshot): void {
   }
 }
 
+function setPlanCollapsed(collapsed: boolean): void {
+  planCollapsed = collapsed;
+  planPanel.classList.toggle("collapsed", collapsed);
+  planToggleButton.textContent = collapsed ? "展开" : "收起";
+  planToggleButton.title = collapsed ? "展开执行计划" : "收起执行计划";
+  planToggleButton.setAttribute("aria-expanded", String(!collapsed));
+}
+
 function resetPlanUi(): void {
   latestPlan = null;
+  lastRenderedPlan = null;
+  setPlanCollapsed(false);
   activePlanApproval = null;
   planDraftItems = [];
   planPanel.hidden = true;

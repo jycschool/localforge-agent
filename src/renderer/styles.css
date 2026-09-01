@@ -3195,6 +3195,18 @@ textarea:focus-visible {
   max-height: min(310px, 38vh);
   padding: 12px 13px;
   overflow: auto;
+  transition: max-height 160ms ease, padding 160ms ease;
+}
+
+.plan-panel.collapsed {
+  max-height: 54px;
+  padding-block: 9px;
+  overflow: hidden;
+}
+
+.plan-panel.collapsed .plan-list,
+.plan-panel.collapsed .plan-evidence {
+  display: none;
 }
 
 .plan-panel header,
@@ -3217,6 +3229,13 @@ textarea:focus-visible {
   gap: 2px;
 }
 
+.plan-panel header > .plan-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
 .plan-kicker {
   color: #9baaff;
   font-size: 10px;
@@ -3231,6 +3250,24 @@ textarea:focus-visible {
   color: #aeb9f8;
   background: rgba(137, 154, 242, 0.1);
   font: 10.5px var(--mono);
+}
+
+.plan-toggle {
+  min-width: 42px;
+  padding: 3px 7px;
+  border: 1px solid rgba(137, 154, 242, 0.18);
+  border-radius: 7px;
+  color: #b8c2fa;
+  background: rgba(137, 154, 242, 0.08);
+  cursor: pointer;
+  font-size: 10.5px;
+}
+
+.plan-toggle:hover,
+.plan-toggle:focus-visible {
+  border-color: rgba(155, 170, 255, 0.42);
+  color: #d9deff;
+  background: rgba(137, 154, 242, 0.15);
 }
 
 .plan-list {

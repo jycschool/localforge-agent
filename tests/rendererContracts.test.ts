@@ -56,6 +56,7 @@ describe("desktop renderer contracts", () => {
       "preview-row-resizer",
       "timeline",
       "plan-panel",
+      "plan-toggle",
       "approval-dialog",
       "validation-progress",
       "toast",

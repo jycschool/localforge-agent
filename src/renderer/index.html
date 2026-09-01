@@ -214,7 +214,16 @@
                 <span class="plan-kicker">执行计划</span>
                 <strong id="plan-title">等待计划</strong>
               </div>
-              <span id="plan-progress" class="plan-progress">0 / 0</span>
+              <div class="plan-header-actions">
+                <span id="plan-progress" class="plan-progress">0 / 0</span>
+                <button
+                  id="plan-toggle"
+                  class="plan-toggle"
+                  type="button"
+                  aria-expanded="true"
+                  aria-controls="plan-list plan-evidence"
+                >收起</button>
+              </div>
             </header>
             <ol id="plan-list" class="plan-list"></ol>
             <div id="plan-evidence" class="plan-evidence" hidden></div>
