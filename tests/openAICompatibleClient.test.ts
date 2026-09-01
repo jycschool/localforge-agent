@@ -47,7 +47,37 @@ describe("OpenAICompatibleClient", () => {
       tool_calls: [toolCall("call-1", '{"path":"README.md"}')],
     });
     const request = fetchMock.mock.calls[0]?.[1];
-    expect(JSON.parse(String(request?.body))).toMatchObject({ stream: true });
+    const requestBody = JSON.parse(String(request?.body));
+    expect(requestBody).toMatchObject({ stream: true });
+    expect(requestBody).not.toHaveProperty("tools");
+    expect(requestBody).not.toHaveProperty("tool_choice");
+  });
+
+  it("sends tool fields only when tools are available", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        successfulResponse("tool-ready response"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createClient().complete(
+      [{ role: "user", content: "inspect" }],
+      [{
+        type: "function",
+        function: {
+          name: "read_file",
+          description: "Read a workspace file",
+          parameters: { type: "object" },
+        },
+      }],
+      new AbortController().signal,
+    );
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      tool_choice: "auto",
+      tools: [{ function: { name: "read_file" } }],
+    });
   });
 
   it("accepts buffered SSE from a compatible service without an event-stream header", async () => {

@@ -1,10 +1,10 @@
 # RepoForge · 代码锻造智能体
 
-[![Windows 质量门禁](https://github.com/jycschool/localforge-agent/actions/workflows/windows-quality-gate.yml/badge.svg)](https://github.com/jycschool/localforge-agent/actions/workflows/windows-quality-gate.yml)
+[![Windows 质量门禁](https://github.com/jycschool/repoforge/actions/workflows/windows-quality-gate.yml/badge.svg)](https://github.com/jycschool/repoforge/actions/workflows/windows-quality-gate.yml)
 
 RepoForge，中文名“代码锻造”，是一个独立运行的项目编程智能体桌面应用。它采用 Codex 风格的工作台：左侧显示项目结构与变更文件，中间提供代码预览、轻量手动编辑和任务前后差异，右侧以连续可滚动会话展示用户问题、Agent 流式回复、工具时间线和命令审批。
 
-公开仓库：https://github.com/jycschool/localforge-agent
+公开仓库：https://github.com/jycschool/repoforge
 
 项目不依赖 VS Code，也不调用或封装现有 coding agent；Electron 只提供桌面窗口。模型消息循环、原生 tool calling 调度、上下文组织、文件工具、本地命令、停止条件、错误处理和变更跟踪均在本仓库内实现。
 
@@ -54,7 +54,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-short
 
 此后双击桌面的 `RepoForge 代码锻造` 即可直接启动现有 `dist` 构建，不会弹出命令行窗口。源码变化后先运行一次 `pnpm run build`；如果移动项目目录或重新安装依赖，应重新创建快捷方式。该方式依赖本机项目目录与 `node_modules`，不是可分发安装包。
 
-开发冻结前可先运行 `pnpm run test:desktop` 完成 33 项桌面显示与状态合同，再运行 `pnpm run verify` 完成类型检查、156 项测试和构建；最后以 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+开发冻结前可先运行 `pnpm run test:desktop` 完成 33 项桌面显示与状态合同，再运行 `pnpm run verify` 完成类型检查、157 项测试和构建；最后以 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
 仓库同时配置了 Windows GitHub Actions 质量门禁：推送到 `main`、提交 Pull Request 或手动触发时，会在不注入真实模型 Token 的干净环境中安装锁定依赖，并依次执行类型检查、桌面专项合同、完整自动化测试、构建和交付检查。
 
@@ -70,7 +70,7 @@ pnpm run package:win
 
 录制完成后运行 `pnpm run package:delivery -- -StudentName "姓名" -VideoPath "视频绝对路径.mp4"`。脚本会检查 MP4 签名、大小、README 长度，并生成只含 `README.txt` 与 `demo.mp4` 的姓名 zip；若本机安装了 ffprobe，还会自动检查两分钟时长。
 
-启动后点击“打开项目”。需要免费模型时，在“设置”中选择 `ModelScope · Qwen3 Coder 30B` 预设并粘贴自己的 ModelScope Token；也可以填写其他 OpenAI-compatible API 地址和 Model-Id。设置同时提供只读/工作区读写权限与快速/标准/深入响应档位；Agent 标题旁显示本次任务累计 Token，接口未返回 usage 时以 `≈` 标明本地估算。右侧的 `Skill` 可新建、编辑、删除和选择项目工作方式；`Memory` 可维护不进入仓库的长期上下文；“附件”会把明确选择的项目文本文件发送给当前模型服务。连续输入会自动保留同一会话上下文；点击“新会话”可从空白上下文开始，旧记录可从“历史”中切换、继续或整段删除。也可以先执行 `pnpm run build`，只生成桌面程序的开发构建。
+启动后点击“打开项目”。在“设置”中填写 OpenAI-compatible API 地址、Model-Id 和对应的 Token 或 Key；默认配置已填写 ModelScope API 地址与 Qwen3 Coder Model-Id，也可以新建其他服务或模型配置。设置同时提供只读/工作区读写权限与快速/标准/深入响应档位；Agent 标题旁显示本次任务累计 Token，接口未返回 usage 时以 `≈` 标明本地估算。右侧的 `Skill` 可新建、编辑、删除和选择项目工作方式；`Memory` 可维护不进入仓库的长期上下文；“附件”会把明确选择的项目文本文件发送给当前模型服务。连续输入会自动保留同一会话上下文；点击“新会话”可从空白上下文开始，旧记录可从“历史”中切换、继续或整段删除。也可以先执行 `pnpm run build`，只生成桌面程序的开发构建。
 
 ModelScope 免费 API 的账号绑定条件和调用额度可能调整，请以控制台当日提示为准。Token 只保存在操作系统安全存储中；切换 API 服务时，RepoForge 不会把原服务的 Key 发送到新地址。
 

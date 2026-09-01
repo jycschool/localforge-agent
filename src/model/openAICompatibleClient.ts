@@ -43,8 +43,7 @@ export class OpenAICompatibleClient implements ModelClient {
     const requestBody = JSON.stringify({
       model: this.config.model,
       messages,
-      tools,
-      tool_choice: "auto",
+      ...(tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
       stream: true,
       max_tokens: boundedInteger(this.config.maxTokens, 8_192, 256, 65_536),
     });

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { mkdirSync } from "node:fs";
 import { readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AgentLoop, type AgentRunResult } from "./agent/agentLoop";
@@ -44,6 +45,12 @@ import { RunHistoryStore } from "./desktop/runHistoryStore";
 import { summarizeRunOutcome } from "./desktop/runOutcome";
 import { formatRunReport } from "./desktop/runReport";
 import { WorkspaceStateStore } from "./desktop/workspaceStateStore";
+
+// Keep development launches, desktop shortcuts, and packaged builds on the
+// same data directory even when Electron's product name changes.
+const canonicalUserDataPath = path.join(app.getPath("appData"), "localforge-agent");
+mkdirSync(canonicalUserDataPath, { recursive: true });
+app.setPath("userData", canonicalUserDataPath);
 import { OpenAICompatibleClient } from "./model/openAICompatibleClient";
 import { diagnoseModel } from "./model/modelDiagnostics";
 import { createWorkspaceTools } from "./tools/workspaceTools";

@@ -370,16 +370,6 @@
           </div>
           <small id="profile-count">最多保存 12 个；不同配置的 Key 独立加密保存。</small>
         </section>
-        <section class="provider-preset" aria-label="推荐模型服务">
-          <div>
-            <span class="preset-badge">免费体验</span>
-            <strong>ModelScope · Qwen3 Coder 30B</strong>
-            <small>面向代码 Agent 与工具调用，使用官方免费额度，需要 ModelScope Token。</small>
-          </div>
-          <button id="use-modelscope-preset" class="button button-secondary" type="button">
-            使用
-          </button>
-        </section>
         <label>
           API 地址
           <input id="api-base-url" type="url" required />
@@ -387,7 +377,7 @@
         <label>
           模型
           <select id="model-preset">
-            <option value="Qwen/Qwen3-Coder-30B-A3B-Instruct">Qwen3 Coder 30B（推荐）</option>
+            <option value="Qwen/Qwen3-Coder-30B-A3B-Instruct">Qwen3 Coder 30B</option>
             <option value="custom">自定义模型 ID</option>
           </select>
           <input id="model-name" type="text" required placeholder="例如：组织名/模型名" />
@@ -399,7 +389,7 @@
           <small id="api-key-help"></small>
         </label>
         <button id="open-modelscope-token" class="token-link" type="button">
-          获取免费的 ModelScope Token ↗
+          打开 ModelScope Token 页面 ↗
         </button>
         <div class="settings-grid">
           <label>
@@ -419,14 +409,15 @@
             </select>
             <small>控制单轮输出上限和探索深度，不伪装成模型生成速度。</small>
           </label>
-          <label>
+          <label class="settings-limit-field">
             最大步骤
             <input id="max-steps" type="number" min="1" max="50" required />
             <small>默认 20；复杂规划任务可继续增加，重复失败仍会提前停止。</small>
           </label>
-          <label>
+          <label class="settings-limit-field">
             命令超时（秒）
             <input id="command-timeout" type="number" min="1" max="600" required />
+            <small>最长 600 秒；超时后自动停止命令并保留已有输出。</small>
           </label>
         </div>
         <footer>

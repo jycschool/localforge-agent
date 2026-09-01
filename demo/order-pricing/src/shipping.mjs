@@ -7,7 +7,7 @@ const FREE_SHIPPING_THRESHOLDS = {
  * Return the shipping fee for an order subtotal and membership level.
  *
  * This starter implementation intentionally contains boundary and validation
- * defects for the LocalForge demonstration task.
+ * defects for the RepoForge demonstration task.
  */
 export function calculateShippingFee(subtotal, membership = "standard") {
   const threshold =

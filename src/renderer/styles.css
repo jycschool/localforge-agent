@@ -3014,32 +3014,36 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
-.provider-preset {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px;
-  border: 1px solid rgba(143, 183, 255, 0.22);
-  border-radius: 11px;
-  background: linear-gradient(135deg, rgba(71, 105, 179, 0.14), rgba(126, 95, 180, 0.08));
-}
-
 .profile-manager {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 18px;
+  row-gap: 10px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.022);
 }
 
+.profile-manager > label {
+  min-width: 0;
+}
+
+#settings-profile-select,
+#profile-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .profile-manager-actions {
   display: flex;
-  align-items: end;
+  grid-column: 2;
+  grid-row: 2;
+  align-items: center;
+  justify-self: end;
   gap: 6px;
-  padding-bottom: 1px;
 }
 
 .profile-manager-actions .button {
@@ -3049,32 +3053,10 @@ textarea:focus-visible {
 }
 
 .profile-manager > small {
-  grid-column: 1 / -1;
-}
-
-.provider-preset > div {
-  display: grid;
-  gap: 4px;
-}
-
-.provider-preset strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.provider-preset .preset-badge {
-  width: fit-content;
-  padding: 2px 6px;
-  border-radius: 999px;
-  color: #b7c9ff;
-  background: rgba(107, 133, 213, 0.18);
-  font-size: 10px;
-}
-
-.provider-preset .button {
-  flex: 0 0 auto;
-  min-width: 84px;
-  white-space: nowrap;
+  grid-column: 1;
+  grid-row: 2;
+  align-self: center;
+  min-width: 0;
 }
 
 .token-link {
@@ -3129,7 +3111,17 @@ textarea:focus-visible {
 .settings-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 12px;
+}
+
+.settings-grid > label {
+  min-width: 0;
+}
+
+.settings-limit-field {
+  grid-template-rows: auto 39px minmax(31px, auto);
+  align-content: start;
 }
 
 .modal footer {

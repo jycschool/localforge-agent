@@ -265,7 +265,6 @@ const modelNameInput = element<HTMLInputElement>("model-name");
 const modelPresetInput = element<HTMLSelectElement>("model-preset");
 const apiKeyInput = element<HTMLInputElement>("api-key");
 const apiKeyHelp = element<HTMLElement>("api-key-help");
-const useModelScopePresetButton = element<HTMLButtonElement>("use-modelscope-preset");
 const openModelScopeTokenButton = element<HTMLButtonElement>("open-modelscope-token");
 const maxStepsInput = element<HTMLInputElement>("max-steps");
 const commandTimeoutInput = element<HTMLInputElement>("command-timeout");
@@ -395,7 +394,6 @@ deleteModelProfileButton.addEventListener("click", () => void deleteModelProfile
 testModelButton.addEventListener("click", () => void testModelConnection());
 modelPresetInput.addEventListener("change", selectModelPreset);
 modelNameInput.addEventListener("input", syncModelPreset);
-useModelScopePresetButton.addEventListener("click", useModelScopePreset);
 openModelScopeTokenButton.addEventListener("click", () => void api.openModelScopeTokenPage());
 exportRunReportButton.addEventListener("click", () => void exportSelectedRunReport());
 codeSelectionToolbar.querySelectorAll<HTMLButtonElement>("[data-selection-action]").forEach((button) => {
@@ -1668,19 +1666,6 @@ async function deleteModelProfile(): Promise<void> {
     settingsError.textContent = errorMessage(error);
     renderSettingsProfileSelect();
   }
-}
-
-function useModelScopePreset(): void {
-  apiBaseUrlInput.value = "https://api-inference.modelscope.cn/v1";
-  modelNameInput.value = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
-  syncModelPreset();
-  apiKeyInput.value = "";
-  apiKeyHelp.textContent =
-    "请粘贴 ModelScope Token。切换服务不会把其他平台保存的 Key 发送给 ModelScope。";
-  if (!editingModelProfileId || profileNameInput.value === "新模型配置") {
-    profileNameInput.value = "ModelScope · Qwen3 Coder 30B";
-  }
-  apiKeyInput.focus();
 }
 
 function selectModelPreset(): void {

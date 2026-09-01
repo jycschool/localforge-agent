@@ -63,5 +63,10 @@ describe("desktop renderer contracts", () => {
     ]) {
       expect(html).toContain(`id="${id}"`);
     }
+    expect(html).not.toContain("provider-preset");
+    expect(html).not.toContain("免费体验");
+    expect(html).not.toContain("Qwen3 Coder 30B（推荐）");
+    expect(html.match(/class="settings-limit-field"/g)).toHaveLength(2);
+    expect(html).toContain("最长 600 秒；超时后自动停止命令并保留已有输出。");
   });
 });

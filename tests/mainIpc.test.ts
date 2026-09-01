@@ -11,7 +11,9 @@ const electronMocks = vi.hoisted(() => ({
   appOn: vi.fn(),
   dialog: vi.fn(),
   handle: vi.fn(),
+  mkdirSync: vi.fn(),
   openExternal: vi.fn(async () => undefined),
+  setPath: vi.fn(),
 }));
 
 const projectMocks = vi.hoisted(() => ({
@@ -26,12 +28,18 @@ vi.mock("electron", () => ({
     getPath: vi.fn(() => "C:\\LocalForge-test"),
     on: electronMocks.appOn,
     quit: vi.fn(),
+    setPath: electronMocks.setPath,
     whenReady: vi.fn(() => new Promise<void>(() => undefined)),
   },
   BrowserWindow: Object.assign(vi.fn(), { getAllWindows: vi.fn(() => []) }),
   dialog: { showOpenDialog: electronMocks.dialog },
   ipcMain: { handle: electronMocks.handle },
   shell: { openExternal: electronMocks.openExternal },
+}));
+
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs")>()),
+  mkdirSync: electronMocks.mkdirSync,
 }));
 
 vi.mock("../src/desktop/projectService.js", () => projectMocks);
@@ -75,6 +83,14 @@ describe("main-process IPC boundary", () => {
   it("registers every request channel once and never registers event channels", async () => {
     await registerWithStores();
 
+    expect(electronMocks.mkdirSync).toHaveBeenCalledWith(
+      "C:\\LocalForge-test\\localforge-agent",
+      { recursive: true },
+    );
+    expect(electronMocks.setPath).toHaveBeenCalledWith(
+      "userData",
+      "C:\\LocalForge-test\\localforge-agent",
+    );
     const registered = electronMocks.handle.mock.calls.map((call) => call[0]);
     expect(registered).toHaveLength(34);
     expect(new Set(registered).size).toBe(34);
