@@ -4,7 +4,6 @@
   "description": "A standalone and transparent coding agent desktop app with reviewable plans, tools and changes.",
   "version": "0.1.0",
   "private": true,
-  "publisher": "localforge",
   "license": "UNLICENSED",
   "main": "./dist/main.js",
   "scripts": {

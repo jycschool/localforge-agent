@@ -31,9 +31,11 @@ RepoForge，中文名“代码锻造”，是一个独立运行的项目编程�
 - 大目录按展开状态延迟渲染，并限制界面中的历史输出，避免长任务拖慢前端。
 - Agent 总结和历史结果以安全的轻量 Markdown 排版；只创建文本节点，不执行模型返回的 HTML。
 - API Key 使用操作系统安全存储加密，也可通过 `LOCALFORGE_API_KEY` 提供；本地命令子进程会剥离常见 Key、Token、Secret 等敏感环境变量。
-- 内置 ModelScope 的 Qwen3 Coder 30B 免费推理预设；模型针对代码 Agent 和工具调用，免费额度适合课程演示。
+- 内置 ModelScope 的 Qwen3 Coder 30B 兼容配置示例，也可新增其他 OpenAI-compatible 服务与模型。
 - 设置页提供“保存并测试”，分别检查认证、文本、流式响应、Token usage 与原生工具调用，避免只凭“你好”判断模型是否适合 Agent。
 - 支持最多 12 个模型配置：顶栏快速切换，配置可新建、重命名和二次确认删除；每个配置使用自己的加密 Key 与能力自检记录，运行期间锁定切换。
+
+为使改名前保存的配置、历史和项目 Skill 继续可用，`.localforge`、`LOCALFORGE_API_KEY` 与内部包名 `localforge-agent` 作为兼容标识保留；窗口、图标、仓库、制品和其他对外名称均统一为 RepoForge。完整边界见 [品牌命名与应用图标修改说明](docs/变更记录/19-品牌命名与应用图标修改说明.md)。
 
 ## 本地运行
 
@@ -54,7 +56,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-short
 
 此后双击桌面的 `RepoForge 代码锻造` 即可直接启动现有 `dist` 构建，不会弹出命令行窗口。源码变化后先运行一次 `pnpm run build`；如果移动项目目录或重新安装依赖，应重新创建快捷方式。该方式依赖本机项目目录与 `node_modules`，不是可分发安装包。
 
-开发冻结前可先运行 `pnpm run test:desktop` 完成 33 项桌面显示与状态合同，再运行 `pnpm run verify` 完成类型检查、157 项测试和构建；最后以 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
+代码变更后可先运行 `pnpm run test:desktop` 完成 33 项桌面显示与状态合同，再运行 `pnpm run verify` 完成类型检查、157 项测试和构建；发布前以 `pnpm run verify:delivery` 检查 README.txt 长度、Git 历史凭据形态、禁入文件、文档链接和演示故障基线。
 
 仓库同时配置了 Windows GitHub Actions 质量门禁：推送到 `main`、提交 Pull Request 或手动触发时，会在不注入真实模型 Token 的干净环境中安装锁定依赖，并依次执行类型检查、桌面专项合同、完整自动化测试、构建和交付检查。
 
@@ -72,7 +74,7 @@ pnpm run package:win
 
 启动后点击“打开项目”。在“设置”中填写 OpenAI-compatible API 地址、Model-Id 和对应的 Token 或 Key；默认配置已填写 ModelScope API 地址与 Qwen3 Coder Model-Id，也可以新建其他服务或模型配置。设置同时提供只读/工作区读写权限与快速/标准/深入响应档位；Agent 标题旁显示本次任务累计 Token，接口未返回 usage 时以 `≈` 标明本地估算。右侧的 `Skill` 可新建、编辑、删除和选择项目工作方式；`Memory` 可维护不进入仓库的长期上下文；“附件”会把明确选择的项目文本文件发送给当前模型服务。连续输入会自动保留同一会话上下文；点击“新会话”可从空白上下文开始，旧记录可从“历史”中切换、继续或整段删除。也可以先执行 `pnpm run build`，只生成桌面程序的开发构建。
 
-ModelScope 免费 API 的账号绑定条件和调用额度可能调整，请以控制台当日提示为准。Token 只保存在操作系统安全存储中；切换 API 服务时，RepoForge 不会把原服务的 Key 发送到新地址。
+ModelScope API 的账号条件、可用模型和调用额度可能调整，请以控制台当日提示为准。Token 只保存在操作系统安全存储中；切换 API 服务时，RepoForge 不会把原服务的 Key 发送到新地址。
 
 ## 项目结构
 
@@ -99,4 +101,4 @@ docs/          软件生命周期文档、ADR 与界面原型
 3. 默认可观察、可停止、可审查，不把模型文字直接当作成功证据。
 4. 首版是 Agent 工作台，只提供受限文本编辑，不追求语言服务、调试器或版本控制功能。
 
-完整需求、用例、设计、计划和追踪关系见 [文档索引](docs/文档索引.md)。真实 ModelScope 模型已完成三轮修改验证（10、10、9 步）和一轮 0 命令、0 改动的只读验证；另一次远端 429 已转化为有限重试和明确指引。计划于 2026 年 9 月 2 日前完成演示视频和最终材料。
+完整需求、用例、设计、计划和追踪关系见 [文档索引](docs/文档索引.md)。真实 ModelScope 模型已完成三轮修改验证（10、10、9 步）和一轮 0 命令、0 改动的只读验证；另一次远端 429 已转化为有限重试和明确指引。截至 2026 年 9 月 2 日，仓库侧开发、自动化验证、Windows CI/CD、README.txt 和视频候选元数据检查均已完成，剩余工作仅为仓库外的视频内容复看、姓名压缩包生成与上传复核。

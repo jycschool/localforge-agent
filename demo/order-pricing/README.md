@@ -16,7 +16,7 @@ pnpm test
 
 预期 6 项测试中 2 项通过、4 项失败。边界测试和参数校验测试用于让视频稳定展示“读取—运行—失败—修改—再运行”的 Agent 闭环。
 
-项目同时包含 `.localforge/skills/test-first-demo.md`。用 RepoForge 打开本目录后，可选择 `Test-first demo verification`，让模型明确遵守“先取得失败基线、只修改实现、不得削弱测试、使用相同命令复验”的演示规范。Skill 不包含代码，也不会绕过权限和命令审批。
+项目同时包含 `.localforge/skills/demo-verification.md`。用 RepoForge 打开本目录后，可选择 `Test-first demo verification`，让模型明确遵守“先取得失败基线、只修改实现、不得削弱测试、使用相同命令复验”的演示规范。Skill 不包含代码，也不会绕过权限和命令审批。
 
 ## 重置
 
